@@ -2,6 +2,7 @@ using HouseholdFinances.Api.Authentication;
 using HouseholdFinances.Api.Conventions;
 using HouseholdFinances.Api.Errors;
 using HouseholdFinances.Domain.Errors;
+using HouseholdFinances.Infrastructure.DependencyInjection;
 using HouseholdFinances.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,6 +22,9 @@ builder.Services.AddOpenApi(OpenApiConventions.Configure);
 // Register the EF Core MySQL context. The connection string is read from
 // configuration (appsettings placeholder, user secrets, or environment variables).
 builder.Services.AddHouseholdFinancesDbContext(builder.Configuration);
+
+// Household domain repository and service implementations (Infrastructure).
+builder.Services.AddHouseholdFinancesHouseholdDomain();
 
 // Authentication/authorization plumbing. Until the deferred authentication service issue
 // (backend #11) registers the concrete Google Identity scheme, a provider-agnostic placeholder
