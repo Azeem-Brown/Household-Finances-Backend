@@ -32,16 +32,25 @@ builder.Services.AddHouseholdFinancesIncomeDomain();
 // Bill domain service implementation (Infrastructure).
 builder.Services.AddHouseholdFinancesBillDomain();
 
-// Authentication/authorization plumbing. Until the deferred authentication service issue
-// (backend #11) registers the concrete Google Identity scheme, a provider-agnostic placeholder
-// keeps the pipeline registered and the host starting. An authenticated user is the default
-// requirement for controllers; infrastructure endpoints opt out with AllowAnonymous.
-builder.Services.AddHouseholdFinancesAuthentication();
+// Authentication/authorization plumbing. The API validates a Google Identity ID token at the
+// sign-in endpoint and issues its own JWT, which this bearer scheme validates on every request.
+// An authenticated user is the default requirement for controllers; infrastructure endpoints opt
+// out with AllowAnonymous.
+builder.Services.AddHouseholdFinancesAuthentication(builder.Configuration, builder.Environment);
 
 // Resolves the authenticated user from the request principal for domain and API code.
 builder.Services.AddCurrentUserAccessor();
 
 var app = builder.Build();
+
+// Startup guard: the development Google token bypass must never be active outside Development.
+// Registration already scopes it to Development; this makes a misconfiguration fail fast.
+if (!app.Environment.IsDevelopment()
+    && app.Services.GetRequiredService<IGoogleTokenValidator>() is DevelopmentGoogleTokenValidator)
+{
+    throw new InvalidOperationException(
+        "The development Google token validator must not be active outside the Development environment.");
+}
 
 // Global exception handling runs first so every later middleware and endpoint failure is
 // translated into a ProblemDetails response.
