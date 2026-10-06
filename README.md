@@ -17,16 +17,16 @@ the issue was an illustration, not a pinned requirement.
 | Project                            | Path                                   | Responsibility                                                      |
 | ---------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
 | `HouseholdFinances.Api`            | `src/HouseholdFinances.Api`            | ASP.NET Core Web API host and HTTP entry points.                    |
-| `HouseholdFinances.Domain`         | `src/HouseholdFinances.Domain`         | Entities and service interfaces (none yet).                         |
+| `HouseholdFinances.Domain`         | `src/HouseholdFinances.Domain`         | Entity models and the `Interval` enum (service interfaces to come). |
 | `HouseholdFinances.Infrastructure` | `src/HouseholdFinances.Infrastructure` | Data access; planned around EF Core with the Pomelo MySQL provider. |
 | `HouseholdFinances.Tests`          | `tests/HouseholdFinances.Tests`        | xUnit test project.                                                 |
 
 Project references: Api -> Domain and Infrastructure, Infrastructure -> Domain, and the
 test project -> Api, Domain, and Infrastructure.
 
-The Domain and Infrastructure projects are intentionally empty scaffolds. Entity
-definitions, EF Core wiring, controllers, and authentication are excluded from this issue
-and are added by later work.
+The Domain project now defines the specification entity models and the `Interval` enum
+(issue #2). The Infrastructure project is still an empty scaffold. EF Core wiring,
+controllers, and authentication are added by later work.
 
 ## Prerequisites
 
