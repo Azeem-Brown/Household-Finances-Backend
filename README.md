@@ -74,6 +74,30 @@ In development only, the generated OpenAPI document is served at
 `http://localhost:5252/openapi/v1.json` and the Swagger UI at
 `http://localhost:5252/swagger`. Both are disabled outside development.
 
+## Authentication and authorization
+
+Authentication and authorization are registered by `AddHouseholdFinancesAuthentication`
+(`HouseholdFinances.Api.Authentication`). `UseAuthentication()` populates `HttpContext.User`, then
+`UseAuthorization()` enforces the policy.
+
+- An authenticated user is the **default requirement** for every endpoint. A controller needs no
+  attribute to be protected; add `[AllowAnonymous]` (or `AllowAnonymous()` on a minimal endpoint) to
+  opt out. Infrastructure endpoints (`/`, `/health`, the OpenAPI document, and the placeholder
+  error-convention route) are explicitly anonymous.
+- An unauthenticated request to a protected endpoint returns **HTTP 401**. A request that is
+  authenticated but not permitted returns 403.
+- Domain and API code read the current user through `ICurrentUserService`
+  (`HouseholdFinances.Domain.Abstractions`), which exposes `IsAuthenticated` and `UserIdentifier`.
+  The default `HttpContextCurrentUserService` reads the identifier from the
+  `ClaimTypes.NameIdentifier` claim of the authenticated principal.
+
+The concrete scheme is **not** configured yet. Until it is, a provider-agnostic placeholder scheme
+(`DeferredAuthenticationHandler`) never authenticates a request, so the pipeline is registered and
+the host still starts. The single replacement point is the marked block in
+`AddHouseholdFinancesAuthentication`; the deferred authentication service issue (backend #11)
+supplies the real Google Identity token validation and API-issued JWT there. No provider-specific
+configuration is hard-coded.
+
 ## Error handling
 
 Failures raise a typed exception from `HouseholdFinances.Domain.Errors`:

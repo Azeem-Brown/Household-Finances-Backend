@@ -1,3 +1,4 @@
+using HouseholdFinances.Api.Authentication;
 using HouseholdFinances.Api.Conventions;
 using HouseholdFinances.Api.Errors;
 using HouseholdFinances.Domain.Errors;
@@ -21,6 +22,15 @@ builder.Services.AddOpenApi(OpenApiConventions.Configure);
 // configuration (appsettings placeholder, user secrets, or environment variables).
 builder.Services.AddHouseholdFinancesDbContext(builder.Configuration);
 
+// Authentication/authorization plumbing. Until the deferred authentication service issue
+// (backend #11) registers the concrete Google Identity scheme, a provider-agnostic placeholder
+// keeps the pipeline registered and the host starting. An authenticated user is the default
+// requirement for controllers; infrastructure endpoints opt out with AllowAnonymous.
+builder.Services.AddHouseholdFinancesAuthentication();
+
+// Resolves the authenticated user from the request principal for domain and API code.
+builder.Services.AddCurrentUserAccessor();
+
 var app = builder.Build();
 
 // Global exception handling runs first so every later middleware and endpoint failure is
@@ -30,8 +40,9 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    // Serve the generated OpenAPI document and its Swagger UI in development only.
-    app.MapOpenApi();
+    // Serve the generated OpenAPI document and its Swagger UI in development only. They are
+    // infrastructure, so they opt out of the default authenticated-user requirement.
+    app.MapOpenApi().AllowAnonymous();
     app.UseSwaggerUI(options =>
     {
         options.SwaggerEndpoint(OpenApiConventions.DocumentRoute, "Household Finances API v1");
@@ -41,15 +52,22 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Authentication populates HttpContext.User from the registered scheme; authorization enforces
+// the default authenticated-user requirement set up in AddHouseholdFinancesAuthentication.
+app.UseAuthentication();
+app.UseAuthorization();
+
 // Minimal endpoint so the host can be confirmed to start and respond.
 // Domain, persistence, and authentication are added by later issues.
 app.MapGet("/", () => Results.Ok(new { service = "HouseholdFinances.Api", status = "ok" }))
-    .WithName("GetServiceInfo");
+    .WithName("GetServiceInfo")
+    .AllowAnonymous();
 
 // Liveness/readiness probe. Deliberately unversioned: it is infrastructure, not domain API.
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
     .WithName("GetHealth")
-    .WithSummary("Liveness and readiness probe for the API host.");
+    .WithSummary("Liveness and readiness probe for the API host.")
+    .AllowAnonymous();
 
 // Placeholder that demonstrates the error convention end to end: the typed exception is caught
 // by ExceptionHandlingMiddleware and returned as a ProblemDetails body. Real endpoints replace
@@ -57,7 +75,8 @@ app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
 app.MapGet(
         "/api/error-convention/{identifier:guid}",
         DemonstrateErrorConvention)
-    .WithName("DemonstrateErrorConvention");
+    .WithName("DemonstrateErrorConvention")
+    .AllowAnonymous();
 
 // Controller routes are discovered here; the ApiRoutePrefixConvention wraps them in /api/v1.
 app.MapControllers();
