@@ -74,6 +74,24 @@ In development only, the generated OpenAPI document is served at
 `http://localhost:5252/openapi/v1.json` and the Swagger UI at
 `http://localhost:5252/swagger`. Both are disabled outside development.
 
+## User profile endpoints
+
+The User domain is implemented as `IUserRepository` and `IUserService`
+(`HouseholdFinances.Domain.Abstractions`) with their EF Core implementations in
+`HouseholdFinances.Infrastructure`, exposed by `UsersController`
+(`HouseholdFinances.Api.Controllers`). The current user is resolved from the authenticated
+principal through `ICurrentUserService`; no endpoint accepts a user id from the client.
+
+- `GET /api/v1/users/me` returns the current user's `id`, `name`, `email`, and `households`
+  (an array of `{ id, name }`, empty when the user has no membership).
+- `PATCH /api/v1/users/me` updates the current user's display name from a `{ "name": "..." }`
+  body and returns the updated profile.
+
+Both endpoints require an authenticated caller. The password/hash is never returned: the response
+is the `UserProfile` read model, which has no password member. A blank or whitespace-only name is
+rejected with `InvalidInput Name` (HTTP 400), an unknown user with `NotFound <id>` (HTTP 404), and
+an unresolvable caller with `Unauthorized me` (HTTP 401), all using the error convention.
+
 ## Authentication and authorization
 
 Authentication and authorization are registered by `AddHouseholdFinancesAuthentication`
