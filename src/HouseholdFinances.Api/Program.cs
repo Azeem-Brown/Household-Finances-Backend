@@ -25,6 +25,8 @@ builder.Services.AddHouseholdFinancesDbContext(builder.Configuration);
 
 // Household domain repository and service implementations (Infrastructure).
 builder.Services.AddHouseholdFinancesHouseholdDomain();
+// User domain repository and service implementations (Infrastructure).
+builder.Services.AddHouseholdFinancesUserDomain();
 
 // Authentication/authorization plumbing. Until the deferred authentication service issue
 // (backend #11) registers the concrete Google Identity scheme, a provider-agnostic placeholder
