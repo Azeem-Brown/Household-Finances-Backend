@@ -25,6 +25,18 @@ public sealed class UserRepository : IUserRepository
         _context.Users.FirstOrDefaultAsync(user => user.Id == userId, cancellationToken);
 
     /// <inheritdoc />
+    public Task<User?> GetByGoogleSubjectAsync(
+        string googleSubject,
+        CancellationToken cancellationToken = default) =>
+        _context.Users.FirstOrDefaultAsync(
+            user => user.GoogleSubject == googleSubject,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public void Add(User user) =>
+        _context.Users.Add(user ?? throw new ArgumentNullException(nameof(user)));
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<Household>> GetHouseholdsAsync(
         Guid userId,
         CancellationToken cancellationToken = default)

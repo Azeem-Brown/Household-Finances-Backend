@@ -18,6 +18,23 @@ public interface IUserRepository
     Task<User?> GetByIdAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Finds the user provisioned from the supplied Google Identity subject (<c>sub</c>), or
+    /// <c>null</c> when no user has been provisioned for it. Provisioning is keyed by subject, never
+    /// by email, because an email address can change or be reassigned.
+    /// </summary>
+    /// <param name="googleSubject">The Google Identity subject identifier.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The matching user, or <c>null</c>.</returns>
+    Task<User?> GetByGoogleSubjectAsync(string googleSubject, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Adds a new user to the store. The change is not persisted until
+    /// <see cref="SaveChangesAsync"/> is called.
+    /// </summary>
+    /// <param name="user">The user to add.</param>
+    void Add(User user);
+
+    /// <summary>
     /// Lists the households the user belongs to, ordered by name. Empty when the user has no
     /// household membership.
     /// </summary>

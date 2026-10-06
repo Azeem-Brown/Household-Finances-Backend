@@ -180,6 +180,14 @@ public class UserServiceTests
         public Task<User?> GetByIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(User is not null && User.Id == userId ? User : null);
 
+        public Task<User?> GetByGoogleSubjectAsync(
+            string googleSubject,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                User is not null && User.GoogleSubject == googleSubject ? User : null);
+
+        public void Add(User user) => User = user;
+
         public Task<IReadOnlyList<Household>> GetHouseholdsAsync(
             Guid userId,
             CancellationToken cancellationToken = default) =>
