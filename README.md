@@ -30,6 +30,50 @@ configurations, the Pomelo MySQL provider registration, the initial migration, a
 design-time context factory (issue #3). Controllers, services, and authentication are
 added by later work.
 
+## API conventions
+
+Recorded conventions for the HTTP surface (issue #5). They are applied in code and described
+in the generated OpenAPI document so new endpoints stay consistent.
+
+| Concern | Convention |
+| --- | --- |
+| Style | REST over JSON. |
+| Route prefix | Every controller route is served under `/api/v1`. `ApiRoutePrefixConvention` applies the prefix and is idempotent, so a controller may declare `[Route("households")]` or `[Route("api/v1/households")]` and both produce `/api/v1/households`. |
+| Casing | JSON property names are camelCase and are matched case-insensitively when read. |
+| Enums | Serialized as their numeric values (for example `Interval.Monthly` is `3`). The sibling frontend mirrors these values, so a string enum converter must not be added without a coordinated frontend change. |
+| Date-times | UTC, ISO 8601 round-trip (for example `2026-01-02T03:04:05.0000000Z`). `UtcDateTimeJsonConverter` normalizes values to UTC on both read and write. |
+| Money | A JSON number (`double`) in USD, rounded to two decimal places. |
+| Identifiers | GUIDs. |
+| CORS | Not configured: the Blazor Server frontend calls the API server-to-server. |
+
+A new domain controller follows this shape. The `/api/v1` prefix is applied automatically, so
+the controller only declares its own resource segment:
+
+```csharp
+[ApiController]
+[Route("households")]
+public class HouseholdsController : ControllerBase
+{
+    [HttpGet]
+    public ActionResult GetHouseholds() => Ok();
+}
+```
+
+### Health endpoint
+
+`GET /health` is a liveness/readiness probe and is deliberately unversioned; it is
+infrastructure rather than domain API. It returns `200 OK` with a JSON body:
+
+```json
+{ "status": "Healthy" }
+```
+
+### OpenAPI and Swagger UI
+
+In development only, the generated OpenAPI document is served at
+`http://localhost:5252/openapi/v1.json` and the Swagger UI at
+`http://localhost:5252/swagger`. Both are disabled outside development.
+
 ## Error handling
 
 Failures raise a typed exception from `HouseholdFinances.Domain.Errors`:
@@ -91,8 +135,12 @@ dotnet test
 dotnet run --project src/HouseholdFinances.Api
 ```
 
-Once the API is running, `GET http://localhost:5252/` returns
-`{"service":"HouseholdFinances.Api","status":"ok"}`.
+Once the API is running:
+
+- `GET http://localhost:5252/` returns `{"service":"HouseholdFinances.Api","status":"ok"}`.
+- `GET http://localhost:5252/health` returns `{"status":"Healthy"}`.
+- `GET http://localhost:5252/openapi/v1.json` returns the OpenAPI document (development only).
+- `http://localhost:5252/swagger` renders the Swagger UI (development only).
 
 ## Configuration and secrets
 
