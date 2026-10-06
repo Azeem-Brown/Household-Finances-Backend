@@ -1,0 +1,6 @@
+@HouseholdFinances.Api_HostAddress = http://localhost:5252
+
+GET {{HouseholdFinances.Api_HostAddress}}/
+Accept: application/json
+
+###
