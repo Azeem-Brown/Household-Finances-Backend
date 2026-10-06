@@ -1,7 +1,13 @@
+using HouseholdFinances.Infrastructure.Persistence;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+// Register the EF Core MySQL context. The connection string is read from
+// configuration (appsettings placeholder, user secrets, or environment variables).
+builder.Services.AddHouseholdFinancesDbContext(builder.Configuration);
 
 var app = builder.Build();
 

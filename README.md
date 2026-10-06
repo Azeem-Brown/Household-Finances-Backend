@@ -24,14 +24,17 @@ the issue was an illustration, not a pinned requirement.
 Project references: Api -> Domain and Infrastructure, Infrastructure -> Domain, and the
 test project -> Api, Domain, and Infrastructure.
 
-The Domain project now defines the specification entity models and the `Interval` enum
-(issue #2). The Infrastructure project is still an empty scaffold. EF Core wiring,
-controllers, and authentication are added by later work.
+The Domain project defines the specification entity models and the `Interval` enum
+(issue #2). The Infrastructure project now holds the EF Core `DbContext`, the entity
+configurations, the Pomelo MySQL provider registration, the initial migration, and a
+design-time context factory (issue #3). Controllers, services, and authentication are
+added by later work.
 
 ## Prerequisites
 
 - .NET SDK 10.0.400 or later (the scaffold was verified with 10.0.401).
-- A MySQL server, once the persistence work lands. Not required to build or run this scaffold.
+- A MySQL server to apply migrations or run against a database. It is not required to build
+  the solution or run the tests.
 
 ## Build, test, and run
 
@@ -60,7 +63,38 @@ Store any future connection strings, API keys, or third-party authentication sec
 `dotnet user-secrets set "ConnectionStrings:DefaultConnection" "<value>"` for local
 development and environment variables or a secret manager for deployed environments.
 
+### Database connection
+
+The API host and the design-time context factory read the MySQL connection string from
+the `ConnectionStrings:DefaultConnection` configuration key. `appsettings.json` holds a
+credential-free placeholder (`Server=localhost;Database=household_finances;`); supply the
+real value with
+`dotnet user-secrets set "ConnectionStrings:DefaultConnection" "<value>" --project src/HouseholdFinances.Api`
+or the equivalent `ConnectionStrings__DefaultConnection` environment variable. No
+credentials are committed.
+
+### Migrations
+
+The initial migration lives in `src/HouseholdFinances.Infrastructure/Migrations`. EF Core
+with the Pomelo MySQL provider is used. Pomelo's current release targets EF Core 9, so the
+EF Core packages are pinned to 9.0.x while every project continues to target `net10.0`.
+Add or apply migrations with the EF Core tools:
+
+```powershell
+# Install the tool once (matches the pinned EF Core version)
+dotnet tool install --global dotnet-ef --version 9.0.0
+
+# Add a migration (no running database required)
+dotnet ef migrations add <Name> --project src/HouseholdFinances.Infrastructure
+
+# Apply migrations to a configured local MySQL database
+dotnet ef database update --project src/HouseholdFinances.Infrastructure
+```
+
+Applying the migration requires a reachable MySQL server and a real connection string.
+
 ## Out of scope for this scaffold
 
-Entity definitions, EF Core database wiring, controllers, authentication, and CI/CD
-pipelines are intentionally not part of this issue.
+Repositories, services, controllers, authentication, seed data, and database provisioning
+are intentionally not part of the persistence work. EF Core with the Pomelo MySQL provider,
+the initial migration, and the design-time context factory are now in place.
