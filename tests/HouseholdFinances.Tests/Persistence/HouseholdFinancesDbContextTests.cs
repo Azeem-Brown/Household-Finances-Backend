@@ -132,6 +132,25 @@ public class HouseholdFinancesDbContextTests
         }
     }
 
+    [Fact]
+    public void Model_EnforcesUniqueUserHouseholdMembership()
+    {
+        var context = CreateContext(BuildTestConfiguration(), out var provider);
+        using (provider)
+        {
+            var membership = context.Model.FindEntityType(typeof(UserHousehold));
+            Assert.NotNull(membership);
+
+            // A user may belong to a household at most once, enforced at the database level.
+            var index = membership.GetIndexes().SingleOrDefault(candidate =>
+                candidate.Properties.Select(property => property.Name).SequenceEqual(
+                    new[] { nameof(UserHousehold.UserId), nameof(UserHousehold.HouseholdId) }));
+
+            Assert.NotNull(index);
+            Assert.True(index!.IsUnique);
+        }
+    }
+
     private static void AssertForeignKey<TDependent, TPrincipal>(
         IModel model,
         string foreignKeyPropertyName)

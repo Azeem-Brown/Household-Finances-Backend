@@ -28,5 +28,10 @@ public class UserHouseholdConfiguration : IEntityTypeConfiguration<UserHousehold
             .WithMany()
             .HasForeignKey(membership => membership.HouseholdId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // A user may belong to a household at most once. The unique index enforces the invariant at
+        // the database, beyond the service-level guard, so concurrent writes cannot create a
+        // duplicate membership.
+        builder.HasIndex(membership => new { membership.UserId, membership.HouseholdId }).IsUnique();
     }
 }

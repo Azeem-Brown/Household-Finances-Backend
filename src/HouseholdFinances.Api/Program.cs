@@ -23,6 +23,8 @@ builder.Services.AddOpenApi(OpenApiConventions.Configure);
 // configuration (appsettings placeholder, user secrets, or environment variables).
 builder.Services.AddHouseholdFinancesDbContext(builder.Configuration);
 
+// Household domain repository and service implementations (Infrastructure).
+builder.Services.AddHouseholdFinancesHouseholdDomain();
 // User domain repository and service implementations (Infrastructure).
 builder.Services.AddHouseholdFinancesUserDomain();
 
