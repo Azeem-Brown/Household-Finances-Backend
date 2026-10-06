@@ -30,6 +30,48 @@ configurations, the Pomelo MySQL provider registration, the initial migration, a
 design-time context factory (issue #3). Controllers, services, and authentication are
 added by later work.
 
+## Error handling
+
+Failures raise a typed exception from `HouseholdFinances.Domain.Errors`:
+
+- `ErrorCode` is the backend error enum. Members carry explicit, stable numeric values so the
+  code on the wire never changes, and they match the sibling frontend's client categories:
+  `Unknown = 0`, `NotFound = 1`, `InvalidInput = 2`, `Unauthorized = 3`, `Conflict = 4`.
+- `HouseholdFinancesException` carries an `ErrorCode` and the identifier or number of
+  significance that was being reached. Its message follows the specification's Error Handling
+  section: the enum name followed by the identifier, for example `NotFound 42`.
+
+`ExceptionHandlingMiddleware` (`HouseholdFinances.Api.Errors`) is registered first in the
+pipeline. It maps a `HouseholdFinancesException` to an HTTP status and an
+`application/problem+json` body, and turns every other exception into a generic 500 without
+leaking stack traces or internal details.
+
+| ErrorCode    | HTTP status |
+| ------------ | ----------- |
+| NotFound     | 404         |
+| InvalidInput | 400         |
+| Unauthorized | 401         |
+| Conflict     | 409         |
+| Unknown      | 500         |
+
+Handled errors return a ProblemDetails-shaped body that carries the numeric error code and the
+identifier of significance, for example:
+
+```json
+{
+  "title": "Not Found",
+  "status": 404,
+  "detail": "NotFound 11111111-2222-3333-4444-555555555555",
+  "errorCode": 1,
+  "errorName": "NotFound",
+  "identifier": "11111111-2222-3333-4444-555555555555"
+}
+```
+
+`GET /api/error-convention/{identifier}` is a placeholder endpoint that demonstrates the
+convention; it throws `NotFound` for the supplied identifier and is replaced by real endpoints
+in later issues.
+
 ## Prerequisites
 
 - .NET SDK 10.0.400 or later (the scaffold was verified with 10.0.401).

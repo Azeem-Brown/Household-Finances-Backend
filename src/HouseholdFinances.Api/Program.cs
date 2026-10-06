@@ -1,3 +1,5 @@
+using HouseholdFinances.Api.Errors;
+using HouseholdFinances.Domain.Errors;
 using HouseholdFinances.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +12,10 @@ builder.Services.AddOpenApi();
 builder.Services.AddHouseholdFinancesDbContext(builder.Configuration);
 
 var app = builder.Build();
+
+// Global exception handling runs first so every later middleware and endpoint failure is
+// translated into a ProblemDetails response.
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -24,4 +30,15 @@ app.UseHttpsRedirection();
 app.MapGet("/", () => Results.Ok(new { service = "HouseholdFinances.Api", status = "ok" }))
     .WithName("GetServiceInfo");
 
+// Placeholder that demonstrates the error convention end to end: the typed exception is caught
+// by ExceptionHandlingMiddleware and returned as a ProblemDetails body. Real endpoints replace
+// this in later issues.
+app.MapGet(
+        "/api/error-convention/{identifier:guid}",
+        DemonstrateErrorConvention)
+    .WithName("DemonstrateErrorConvention");
+
 app.Run();
+
+static IResult DemonstrateErrorConvention(Guid identifier) =>
+    throw new HouseholdFinancesException(ErrorCode.NotFound, identifier);
