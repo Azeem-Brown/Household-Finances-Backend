@@ -29,6 +29,8 @@ builder.Services.AddHouseholdFinancesHouseholdDomain();
 builder.Services.AddHouseholdFinancesUserDomain();
 // Income domain service implementation (Infrastructure).
 builder.Services.AddHouseholdFinancesIncomeDomain();
+// Bill domain service implementation (Infrastructure).
+builder.Services.AddHouseholdFinancesBillDomain();
 
 // Authentication/authorization plumbing. Until the deferred authentication service issue
 // (backend #11) registers the concrete Google Identity scheme, a provider-agnostic placeholder
