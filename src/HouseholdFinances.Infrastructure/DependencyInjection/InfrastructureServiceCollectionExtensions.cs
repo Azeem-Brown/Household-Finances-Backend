@@ -58,4 +58,21 @@ public static class InfrastructureServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Registers the Bill domain's service implementation. It is scoped so it shares the request's
+    /// <see cref="Persistence.HouseholdFinancesDbContext"/>. The specification omits a dedicated
+    /// repository for Bills, so the service uses the data context directly and no repository is
+    /// registered.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The same service collection, so calls can be chained.</returns>
+    public static IServiceCollection AddHouseholdFinancesBillDomain(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddScoped<IBillService, BillService>();
+
+        return services;
+    }
 }
