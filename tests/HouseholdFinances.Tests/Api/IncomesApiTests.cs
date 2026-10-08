@@ -157,6 +157,44 @@ public class IncomesApiTests
     }
 
     [Fact]
+    public async Task Update_RecurringEntryChangedToOneOff_ReturnsNullInterval()
+    {
+        using var factory = new Factory();
+        var householdId = Guid.NewGuid();
+        var incomeId = Guid.NewGuid();
+        Seed(factory, context =>
+        {
+            AddHousehold(context, householdId, UserId);
+            context.Incomes.Add(new Income
+            {
+                Id = incomeId,
+                Name = "Salary",
+                Value = 2600.00,
+                StartDate = Start,
+                EndDate = End,
+                Recurring = true,
+                Interval = Interval.BiWeekly,
+                UserId = UserId
+            });
+        });
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        using var response = await client.PutAsJsonAsync(
+            $"/api/v1/households/{householdId}/incomes/{incomeId}",
+            new { name = "Bonus", value = 500.00, startDate = Start, endDate = End, recurring = false, interval = (int?)null });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"interval\":null", json);
+
+        using var document = JsonDocument.Parse(json);
+        Assert.False(document.RootElement.GetProperty("recurring").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("interval").ValueKind);
+    }
+
+    [Fact]
     public async Task Create_ForANonMember_ReturnsNotFoundProblem()
     {
         using var factory = new Factory();
