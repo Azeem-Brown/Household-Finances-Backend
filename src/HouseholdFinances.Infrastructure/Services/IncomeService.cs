@@ -171,15 +171,16 @@ public sealed class IncomeService : IIncomeService
             throw new HouseholdFinancesException(ErrorCode.InvalidInput, IntervalIdentifier);
         }
 
-        // Money is USD with two decimal places, half-up (recorded decision). Non-recurring entries
-        // carry no meaningful cadence, so the zero-valued Daily is stored.
+        // Money is USD with two decimal places, half-up (recorded decision). A non-recurring entry
+        // carries no cadence and is stored as NULL; a recurring entry keeps the interval that the
+        // check above required.
         return new ValidatedIncome(
             trimmedName,
             RoundMoney(input.Value),
             input.StartDate,
             input.EndDate,
             input.Recurring,
-            input.Interval ?? Interval.Daily);
+            input.Interval);
     }
 
     private async Task EnsureMemberAsync(Guid householdId, Guid userId, CancellationToken cancellationToken)
@@ -251,5 +252,5 @@ public sealed class IncomeService : IIncomeService
         DateTime StartDate,
         DateTime EndDate,
         bool Recurring,
-        Interval Interval);
+        Interval? Interval);
 }

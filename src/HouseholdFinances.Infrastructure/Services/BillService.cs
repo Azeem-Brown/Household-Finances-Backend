@@ -171,16 +171,16 @@ public sealed class BillService : IBillService
             throw new HouseholdFinancesException(ErrorCode.InvalidInput, IntervalIdentifier);
         }
 
-        // Money is USD with two decimal places, half-up (recorded decision). Non-recurring entries
-        // carry no meaningful cadence, so the zero-valued Daily is stored, matching the Income
-        // domain so the two stay consistent.
+        // Money is USD with two decimal places, half-up (recorded decision). A non-recurring bill
+        // carries no cadence and is stored as NULL; a recurring bill keeps the interval that the
+        // check above required. This matches the Income domain so the two stay consistent.
         return new ValidatedBill(
             trimmedName,
             RoundMoney(input.Value),
             input.StartDate,
             input.EndDate,
             input.Recurring,
-            input.Interval ?? Interval.Daily);
+            input.Interval);
     }
 
     private async Task EnsureMemberAsync(Guid householdId, Guid userId, CancellationToken cancellationToken)
@@ -244,5 +244,5 @@ public sealed class BillService : IBillService
         DateTime StartDate,
         DateTime EndDate,
         bool Recurring,
-        Interval Interval);
+        Interval? Interval);
 }

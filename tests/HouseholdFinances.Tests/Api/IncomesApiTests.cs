@@ -128,6 +128,35 @@ public class IncomesApiTests
     }
 
     [Fact]
+    public async Task Create_NonRecurringWithoutAnInterval_ReturnsNullInterval()
+    {
+        using var factory = new Factory();
+        var householdId = Guid.NewGuid();
+        Seed(factory, context => AddHousehold(context, householdId, UserId));
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/households/{householdId}/incomes",
+            new { name = "Bonus", value = 500.00, startDate = Start, endDate = End, recurring = false, interval = (int?)null });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"interval\":null", json);
+
+        using var document = JsonDocument.Parse(json);
+        Assert.False(document.RootElement.GetProperty("recurring").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("interval").ValueKind);
+
+        // Round-trip: the stored one-off entry is returned with a null interval by the list endpoint.
+        using var listResponse = await client.GetAsync($"/api/v1/households/{householdId}/incomes");
+        using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        var entry = Assert.Single(listDocument.RootElement.EnumerateArray().ToList());
+        Assert.Equal(JsonValueKind.Null, entry.GetProperty("interval").ValueKind);
+    }
+
+    [Fact]
     public async Task Create_ForANonMember_ReturnsNotFoundProblem()
     {
         using var factory = new Factory();

@@ -105,6 +105,20 @@ public class HouseholdFinancesDbContextTests
             Assert.NotNull(item);
             Assert.False(item.FindProperty(nameof(Item.Name))!.IsNullable);
             Assert.True(item.FindProperty(nameof(Item.Description))!.IsNullable);
+
+            // A non-recurring income or bill stores a NULL interval. Goal shares the same pattern but
+            // is out of scope for this change, so its interval stays required.
+            var income = model.FindEntityType(typeof(Income));
+            Assert.NotNull(income);
+            Assert.True(income.FindProperty(nameof(Income.Interval))!.IsNullable);
+
+            var bill = model.FindEntityType(typeof(Bill));
+            Assert.NotNull(bill);
+            Assert.True(bill.FindProperty(nameof(Bill.Interval))!.IsNullable);
+
+            var goal = model.FindEntityType(typeof(Goal));
+            Assert.NotNull(goal);
+            Assert.False(goal.FindProperty(nameof(Goal.Interval))!.IsNullable);
         }
     }
 

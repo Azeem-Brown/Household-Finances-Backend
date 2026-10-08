@@ -131,9 +131,9 @@ public class BillServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_AllowsANonRecurringBillWithoutAnIntervalAndStoresDaily()
+    public async Task CreateAsync_AllowsANonRecurringBillWithoutAnIntervalAndStoresNull()
     {
-        await using var context = CreateContext(nameof(CreateAsync_AllowsANonRecurringBillWithoutAnIntervalAndStoresDaily));
+        await using var context = CreateContext(nameof(CreateAsync_AllowsANonRecurringBillWithoutAnIntervalAndStoresNull));
         SeedMembership(context, HouseholdId, UserId);
         await context.SaveChangesAsync();
         var service = CreateService(context);
@@ -143,7 +143,62 @@ public class BillServiceTests
             new BillInput("One-off repair", 500.00, Start, End, false, null));
 
         Assert.False(detail.Recurring);
-        Assert.Equal(Interval.Daily, detail.Interval);
+        Assert.Null(detail.Interval);
+
+        // Round-trip: the stored one-off bill comes back with a null interval, not the zero-valued
+        // Daily, so it is distinguishable from a daily bill.
+        var bill = Assert.Single(await service.ListAsync(HouseholdId));
+        Assert.Null(bill.Interval);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RecurringBillRoundTripsItsInterval()
+    {
+        await using var context = CreateContext(nameof(CreateAsync_RecurringBillRoundTripsItsInterval));
+        SeedMembership(context, HouseholdId, UserId);
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        await service.CreateAsync(
+            HouseholdId,
+            new BillInput("Rent", 1200.00, Start, End, true, Interval.Monthly));
+
+        var bill = Assert.Single(await service.ListAsync(HouseholdId));
+        Assert.True(bill.Recurring);
+        Assert.Equal(Interval.Monthly, bill.Interval);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RecurringBillChangedToOneOffStoresNull()
+    {
+        await using var context = CreateContext(nameof(UpdateAsync_RecurringBillChangedToOneOffStoresNull));
+        SeedMembership(context, HouseholdId, UserId);
+        var billId = Guid.NewGuid();
+        context.Bills.Add(new Bill
+        {
+            Id = billId,
+            Name = "Rent",
+            Value = 1200.00,
+            StartDate = Start,
+            EndDate = End,
+            Recurring = true,
+            Interval = Interval.Monthly,
+            HouseholdId = HouseholdId,
+            UserId = UserId
+        });
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        var detail = await service.UpdateAsync(
+            HouseholdId,
+            billId,
+            new BillInput("One-off repair", 500.00, Start, End, false, null));
+
+        Assert.False(detail.Recurring);
+        Assert.Null(detail.Interval);
+
+        var bill = Assert.Single(await service.ListAsync(HouseholdId));
+        Assert.Null(bill.Interval);
     }
 
     [Fact]

@@ -17,7 +17,11 @@ public class Bill
 
     public bool Recurring { get; set; }
 
-    public Interval Interval { get; set; }
+    /// <summary>
+    /// The cadence used when <see cref="Recurring"/> is true; <see langword="null"/> for a one-off
+    /// bill, so a non-recurring bill is distinguishable in storage from a daily one.
+    /// </summary>
+    public Interval? Interval { get; set; }
 
     public Guid HouseholdId { get; set; }
 

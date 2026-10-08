@@ -128,9 +128,9 @@ public class IncomeServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_AllowsANonRecurringEntryWithoutAnIntervalAndStoresDaily()
+    public async Task CreateAsync_AllowsANonRecurringEntryWithoutAnIntervalAndStoresNull()
     {
-        await using var context = CreateContext(nameof(CreateAsync_AllowsANonRecurringEntryWithoutAnIntervalAndStoresDaily));
+        await using var context = CreateContext(nameof(CreateAsync_AllowsANonRecurringEntryWithoutAnIntervalAndStoresNull));
         SeedMembership(context, HouseholdId, UserId);
         await context.SaveChangesAsync();
         var service = CreateService(context);
@@ -140,7 +140,61 @@ public class IncomeServiceTests
             new IncomeInput("Bonus", 500.00, Start, End, false, null));
 
         Assert.False(detail.Recurring);
-        Assert.Equal(Interval.Daily, detail.Interval);
+        Assert.Null(detail.Interval);
+
+        // Round-trip: the stored one-off entry comes back with a null interval, not the zero-valued
+        // Daily, so it is distinguishable from a daily entry.
+        var entry = Assert.Single(await service.ListAsync(HouseholdId));
+        Assert.Null(entry.Interval);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RecurringEntryRoundTripsItsInterval()
+    {
+        await using var context = CreateContext(nameof(CreateAsync_RecurringEntryRoundTripsItsInterval));
+        SeedMembership(context, HouseholdId, UserId);
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        await service.CreateAsync(
+            HouseholdId,
+            new IncomeInput("Salary", 2600.00, Start, End, true, Interval.BiWeekly));
+
+        var entry = Assert.Single(await service.ListAsync(HouseholdId));
+        Assert.True(entry.Recurring);
+        Assert.Equal(Interval.BiWeekly, entry.Interval);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RecurringEntryChangedToOneOffStoresNull()
+    {
+        await using var context = CreateContext(nameof(UpdateAsync_RecurringEntryChangedToOneOffStoresNull));
+        SeedMembership(context, HouseholdId, UserId);
+        var incomeId = Guid.NewGuid();
+        context.Incomes.Add(new Income
+        {
+            Id = incomeId,
+            Name = "Salary",
+            Value = 2600.00,
+            StartDate = Start,
+            EndDate = End,
+            Recurring = true,
+            Interval = Interval.BiWeekly,
+            UserId = UserId
+        });
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        var detail = await service.UpdateAsync(
+            HouseholdId,
+            incomeId,
+            new IncomeInput("Bonus", 500.00, Start, End, false, null));
+
+        Assert.False(detail.Recurring);
+        Assert.Null(detail.Interval);
+
+        var entry = Assert.Single(await service.ListAsync(HouseholdId));
+        Assert.Null(entry.Interval);
     }
 
     [Fact]
