@@ -22,7 +22,9 @@ public class IncomeConfiguration : IEntityTypeConfiguration<Income>
         builder.Property(income => income.StartDate).IsRequired();
         builder.Property(income => income.EndDate).IsRequired();
         builder.Property(income => income.Recurring).IsRequired();
-        builder.Property(income => income.Interval).IsRequired();
+        // Interval is optional: a non-recurring entry stores NULL, a recurring entry stores its
+        // cadence. The column is nullable so the two are distinguishable in storage.
+        builder.Property(income => income.Interval);
         builder.Property(income => income.UserId).HasColumnType(HouseholdFinancesDbContext.GuidColumnType);
 
         builder.HasOne<User>()

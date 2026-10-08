@@ -22,7 +22,9 @@ public class BillConfiguration : IEntityTypeConfiguration<Bill>
         builder.Property(bill => bill.StartDate).IsRequired();
         builder.Property(bill => bill.EndDate).IsRequired();
         builder.Property(bill => bill.Recurring).IsRequired();
-        builder.Property(bill => bill.Interval).IsRequired();
+        // Interval is optional: a non-recurring bill stores NULL, a recurring bill stores its
+        // cadence. The column is nullable so the two are distinguishable in storage.
+        builder.Property(bill => bill.Interval);
         builder.Property(bill => bill.HouseholdId).HasColumnType(HouseholdFinancesDbContext.GuidColumnType);
         builder.Property(bill => bill.UserId).HasColumnType(HouseholdFinancesDbContext.GuidColumnType);
 

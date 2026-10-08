@@ -17,7 +17,10 @@ namespace HouseholdFinances.Domain.Models;
 /// <param name="StartDate">The first occurrence, inclusive.</param>
 /// <param name="EndDate">The last occurrence, inclusive.</param>
 /// <param name="Recurring">Whether the bill repeats.</param>
-/// <param name="Interval">The cadence used when <paramref name="Recurring"/> is true.</param>
+/// <param name="Interval">
+/// The cadence used when <paramref name="Recurring"/> is true; <see langword="null"/> for a
+/// one-off bill.
+/// </param>
 /// <param name="HouseholdId">The household the bill belongs to.</param>
 /// <param name="UserId">The user the bill is attributed to (the member who created it).</param>
 public sealed record BillDetail(
@@ -27,6 +30,6 @@ public sealed record BillDetail(
     DateTime StartDate,
     DateTime EndDate,
     bool Recurring,
-    Interval Interval,
+    Interval? Interval,
     Guid HouseholdId,
     Guid UserId);

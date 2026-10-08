@@ -167,6 +167,74 @@ public class BillsApiTests
     }
 
     [Fact]
+    public async Task Create_NonRecurringWithoutAnInterval_ReturnsNullInterval()
+    {
+        using var factory = new Factory();
+        var householdId = Guid.NewGuid();
+        Seed(factory, context => AddHousehold(context, householdId, UserId));
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/households/{householdId}/bills",
+            new { name = "One-off repair", value = 500.00, startDate = Start, endDate = End, recurring = false, interval = (int?)null });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"interval\":null", json);
+
+        using var document = JsonDocument.Parse(json);
+        Assert.False(document.RootElement.GetProperty("recurring").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("interval").ValueKind);
+
+        // Round-trip: the stored one-off bill is returned with a null interval by the list endpoint.
+        using var listResponse = await client.GetAsync($"/api/v1/households/{householdId}/bills");
+        using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        var bill = Assert.Single(listDocument.RootElement.EnumerateArray().ToList());
+        Assert.Equal(JsonValueKind.Null, bill.GetProperty("interval").ValueKind);
+    }
+
+    [Fact]
+    public async Task Update_RecurringBillChangedToOneOff_ReturnsNullInterval()
+    {
+        using var factory = new Factory();
+        var householdId = Guid.NewGuid();
+        var billId = Guid.NewGuid();
+        Seed(factory, context =>
+        {
+            AddHousehold(context, householdId, UserId);
+            context.Bills.Add(new Bill
+            {
+                Id = billId,
+                Name = "Rent",
+                Value = 1200.00,
+                StartDate = Start,
+                EndDate = End,
+                Recurring = true,
+                Interval = Interval.Monthly,
+                HouseholdId = householdId,
+                UserId = UserId
+            });
+        });
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        using var response = await client.PutAsJsonAsync(
+            $"/api/v1/households/{householdId}/bills/{billId}",
+            new { name = "One-off repair", value = 500.00, startDate = Start, endDate = End, recurring = false, interval = (int?)null });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"interval\":null", json);
+
+        using var document = JsonDocument.Parse(json);
+        Assert.False(document.RootElement.GetProperty("recurring").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("interval").ValueKind);
+    }
+
+    [Fact]
     public async Task Create_ForANonMember_ReturnsNotFoundProblem()
     {
         using var factory = new Factory();
