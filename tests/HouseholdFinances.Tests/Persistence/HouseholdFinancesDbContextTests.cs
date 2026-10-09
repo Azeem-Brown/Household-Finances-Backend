@@ -106,8 +106,8 @@ public class HouseholdFinancesDbContextTests
             Assert.False(item.FindProperty(nameof(Item.Name))!.IsNullable);
             Assert.True(item.FindProperty(nameof(Item.Description))!.IsNullable);
 
-            // A non-recurring income or bill stores a NULL interval. Goal shares the same pattern but
-            // is out of scope for this change, so its interval stays required.
+            // A non-recurring income, bill, or goal stores a NULL interval, so a one-off entry is
+            // distinguishable in storage from a daily one. Goal shares the pattern of issue #30.
             var income = model.FindEntityType(typeof(Income));
             Assert.NotNull(income);
             Assert.True(income.FindProperty(nameof(Income.Interval))!.IsNullable);
@@ -118,7 +118,7 @@ public class HouseholdFinancesDbContextTests
 
             var goal = model.FindEntityType(typeof(Goal));
             Assert.NotNull(goal);
-            Assert.False(goal.FindProperty(nameof(Goal.Interval))!.IsNullable);
+            Assert.True(goal.FindProperty(nameof(Goal.Interval))!.IsNullable);
         }
     }
 
