@@ -75,4 +75,21 @@ public static class InfrastructureServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Registers the Goal domain's service implementation. It is scoped so it shares the request's
+    /// <see cref="Persistence.HouseholdFinancesDbContext"/>. The specification omits a dedicated
+    /// repository for Goals, so the service uses the data context directly and no repository is
+    /// registered.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The same service collection, so calls can be chained.</returns>
+    public static IServiceCollection AddHouseholdFinancesGoalDomain(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddScoped<IGoalService, GoalService>();
+
+        return services;
+    }
 }
