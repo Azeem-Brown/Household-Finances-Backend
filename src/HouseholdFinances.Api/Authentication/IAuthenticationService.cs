@@ -23,14 +23,16 @@ public interface IAuthenticationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Validates a refresh token and issues a new token pair for the same user.
+    /// Validates a refresh token, consumes it, and issues a new token pair for the same user in the
+    /// same token family. Reuse of a consumed token revokes the whole family.
     /// </summary>
     /// <param name="refreshToken">The refresh token from a previous sign-in or refresh.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The API-issued token pair.</returns>
     /// <exception cref="Domain.Errors.HouseholdFinancesException">
-    /// The token is blank (<see cref="Domain.Errors.ErrorCode.InvalidInput"/>), fails validation, or
-    /// belongs to a user that no longer exists (<see cref="Domain.Errors.ErrorCode.Unauthorized"/>).
+    /// The token is blank (<see cref="Domain.Errors.ErrorCode.InvalidInput"/>); or it fails
+    /// validation, has already been consumed, belongs to a revoked family, or belongs to a user that
+    /// no longer exists (<see cref="Domain.Errors.ErrorCode.Unauthorized"/>).
     /// </exception>
     Task<AuthenticationTokenResponse> RefreshAsync(
         string? refreshToken,

@@ -39,8 +39,10 @@ public sealed class JwtOptions
     public int AccessTokenLifetimeMinutes { get; set; } = 30;
 
     /// <summary>
-    /// The lifetime, in days, of an issued refresh token. Refresh tokens are stateless and cannot be
-    /// revoked before they expire, so the window is kept short.
+    /// The lifetime, in days, of an issued refresh token. Refresh tokens are recorded server-side and
+    /// rotated on every successful refresh: the presented token is consumed and a fresh pair is
+    /// issued in the same family. Reuse of a consumed token revokes the family, so a leaked token
+    /// cannot be used silently.
     /// </summary>
     public int RefreshTokenLifetimeDays { get; set; } = 7;
 }
