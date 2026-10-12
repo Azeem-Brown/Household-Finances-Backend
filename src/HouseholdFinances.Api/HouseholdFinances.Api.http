@@ -1,6 +1,30 @@
 @HouseholdFinances.Api_HostAddress = http://localhost:5252
 
+# In Development the API accepts a locally generated token of the form "dev:<subject>" in place
+# of a real Google ID token, so sign-in can be exercised without Google credentials.
+@DevIdToken = dev:local-developer
+
 GET {{HouseholdFinances.Api_HostAddress}}/
+Accept: application/json
+
+###
+
+# @name signIn
+# Sign in and capture the API-issued access and refresh tokens. Run this request before the
+# authenticated request below.
+POST {{HouseholdFinances.Api_HostAddress}}/api/v1/auth/google
+Content-Type: application/json
+
+{
+  "idToken": "{{DevIdToken}}"
+}
+
+###
+
+# Representative authenticated call: read the current user's profile using the access token
+# captured from the sign-in request above.
+GET {{HouseholdFinances.Api_HostAddress}}/api/v1/users/me
+Authorization: Bearer {{signIn.response.body.$.accessToken}}
 Accept: application/json
 
 ###

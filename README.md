@@ -161,8 +161,88 @@ in later issues.
 ## Prerequisites
 
 - .NET SDK 10.0.400 or later (the scaffold was verified with 10.0.401).
-- A MySQL server to apply migrations or run against a database. It is not required to build
-  the solution or run the tests.
+- A MySQL 8 server (8.0.21 or newer) to apply migrations or run against a database. It is not
+  required to build the solution or run the tests. See
+  [Local development database](#local-development-database) to provision one.
+
+## Local development database
+
+The database-backed endpoints and the EF Core migrations need a MySQL 8 server (8.0.21 or
+newer, see `MySqlServerVersionDefaults`). The tests do not: they use
+`Microsoft.EntityFrameworkCore.InMemory` and pass without a database.
+
+Two provisioning options are documented. **Native MySQL is the path that was verified end to
+end against a real database**; Docker Compose is offered as an alternative.
+
+### 1. Start a MySQL 8 server
+
+**Option A - native MySQL (verified).** Install MySQL Server 8.0 or later and start it. Run
+the following once as a MySQL administrator to create the development database and a
+dedicated, non-secret development account:
+
+```sql
+CREATE DATABASE IF NOT EXISTS household_finances
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+CREATE USER IF NOT EXISTS 'household_dev'@'localhost' IDENTIFIED BY 'devpassword';
+GRANT ALL PRIVILEGES ON household_finances.* TO 'household_dev'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+The `household_dev` / `devpassword` credentials are local development values only and must
+never be used in a deployed environment.
+
+**Option B - Docker Compose (alternative).** The repository root contains `compose.yaml`,
+which defines a MySQL 8 service with a named volume, the `household_finances` database, and
+the same non-secret development credentials. With Docker installed:
+
+```powershell
+docker compose up -d
+```
+
+The service publishes MySQL on host port 3306. If a native MySQL already occupies 3306, see
+[Troubleshooting](#troubleshooting) before starting the container.
+
+### 2. Set the connection string
+
+The connection string is read from the `ConnectionStrings:DefaultConnection` configuration
+key and is never committed. Supply it with user secrets:
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=localhost;Database=household_finances;Uid=household_dev;Pwd=devpassword;" --project src/HouseholdFinances.Api
+```
+
+or with the equivalent environment variable:
+
+```powershell
+$env:ConnectionStrings__DefaultConnection = "Server=localhost;Database=household_finances;Uid=household_dev;Pwd=devpassword;"
+```
+
+The `HouseholdFinances.Api` and `HouseholdFinances.Infrastructure` projects share one local
+user-secrets store, so the single `dotnet user-secrets set ... --project
+src/HouseholdFinances.Api` command configures both the running API host and the `dotnet ef`
+design-time factory. `appsettings.json` holds only a credential-free placeholder
+(`Server=localhost;Database=household_finances;`) used when generating migrations without a
+database.
+
+### 3. Apply the migrations
+
+```powershell
+dotnet tool install --global dotnet-ef --version 9.0.0
+dotnet ef database update --project src/HouseholdFinances.Infrastructure --startup-project src/HouseholdFinances.Api
+```
+
+### 4. Run the API against the database
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+dotnet run --project src/HouseholdFinances.Api --no-launch-profile --urls http://localhost:5252
+```
+
+In Development a development token bypass is active: `POST /api/v1/auth/google` accepts a
+token of the form `dev:<subject>` in place of a real Google ID token, so an authenticated
+call can be exercised without Google credentials. Open
+`src/HouseholdFinances.Api/HouseholdFinances.Api.http` and run the sign-in request followed
+by the `/api/v1/users/me` request.
 
 ## Build, test, and run
 
@@ -197,20 +277,19 @@ development and environment variables or a secret manager for deployed environme
 
 ### Database connection
 
-The API host and the design-time context factory read the MySQL connection string from
-the `ConnectionStrings:DefaultConnection` configuration key. `appsettings.json` holds a
-credential-free placeholder (`Server=localhost;Database=household_finances;`); supply the
-real value with
-`dotnet user-secrets set "ConnectionStrings:DefaultConnection" "<value>" --project src/HouseholdFinances.Api`
-or the equivalent `ConnectionStrings__DefaultConnection` environment variable. No
-credentials are committed.
+The API host and the design-time context factory read the MySQL connection string from the
+`ConnectionStrings:DefaultConnection` configuration key and share one local user-secrets
+store. Set it once with user secrets (`dotnet user-secrets set
+"ConnectionStrings:DefaultConnection" "<value>" --project src/HouseholdFinances.Api`) or the
+equivalent `ConnectionStrings__DefaultConnection` environment variable, as described in
+[Local development database](#local-development-database). No credentials are committed.
 
 ### Migrations
 
-The initial migration lives in `src/HouseholdFinances.Infrastructure/Migrations`. EF Core
-with the Pomelo MySQL provider is used. Pomelo's current release targets EF Core 9, so the
-EF Core packages are pinned to 9.0.x while every project continues to target `net10.0`.
-Add or apply migrations with the EF Core tools:
+EF Core with the Pomelo MySQL provider is used. Pomelo's current release targets EF Core 9,
+so the EF Core packages are pinned to 9.0.x while every project continues to target
+`net10.0`. The migrations live in `src/HouseholdFinances.Infrastructure/Migrations`. Add or
+apply them with the EF Core tools:
 
 ```powershell
 # Install the tool once (matches the pinned EF Core version)
@@ -220,10 +299,34 @@ dotnet tool install --global dotnet-ef --version 9.0.0
 dotnet ef migrations add <Name> --project src/HouseholdFinances.Infrastructure
 
 # Apply migrations to a configured local MySQL database
-dotnet ef database update --project src/HouseholdFinances.Infrastructure
+dotnet ef database update --project src/HouseholdFinances.Infrastructure --startup-project src/HouseholdFinances.Api
 ```
 
-Applying the migration requires a reachable MySQL server and a real connection string.
+Applying the migrations requires a reachable MySQL server and a real connection string; see
+[Local development database](#local-development-database). Adding a migration needs the
+connection string to be resolvable but not a running server, so it works with the
+credential-free placeholder.
+
+## Troubleshooting
+
+- **Server not reachable (for example "Unable to connect to any of the specified MySQL
+  hosts").** Confirm the server is running and listening on the configured host and port
+  (`Get-Service *mysql*` on Windows, or `Test-NetConnection localhost -Port 3306`), and that
+  the host and port in `ConnectionStrings:DefaultConnection` match the server.
+- **Wrong credentials ("Access denied for user ...").** Confirm the user and password in the
+  connection string match the database, and re-run the `CREATE USER` / `GRANT` statements in
+  [Local development database](#local-development-database). The API host and the `dotnet ef`
+  design-time factory both read the same `ConnectionStrings:DefaultConnection` value, so fix
+  it in one place (user secrets or the environment variable).
+- **Migrations not applied (for example "Table 'household_finances.users' doesn't exist").**
+  Run `dotnet ef database update` (see [Local development database](#local-development-database)).
+  List applied migrations with `dotnet ef migrations list --project
+  src/HouseholdFinances.Infrastructure`.
+- **Host port 3306 already in use ("bind: address already in use").** Port 3306 is the MySQL
+  default, and a native MySQL service already occupies it. Either stop the native service
+  before `docker compose up -d`, or remap the published port in `compose.yaml` (for example
+  `"3307:3306"`) and update the port in the connection string to match. Only one process can
+  bind host port 3306 at a time.
 
 ## Out of scope for this scaffold
 

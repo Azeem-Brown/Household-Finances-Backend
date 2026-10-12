@@ -22,6 +22,14 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!--
+      Deliberately shares the API project's local user-secrets store (the same value in
+      HouseholdFinances.Api.csproj). The design-time factory (HouseholdFinancesDbContextFactory)
+      lives in this assembly, so it resolves user secrets from here; using the API's id means
+      'dotnet ef' sees ConnectionStrings:DefaultConnection set through the API project's user
+      secrets. Keep both values in sync.
+    -->
+    <UserSecretsId>d7b7aa51-8116-4b04-a67a-5f3a0dfe2c3b</UserSecretsId>
   </PropertyGroup>
 
 </Project>
