@@ -24,7 +24,10 @@ public static class AuthenticationServiceCollectionExtensions
     /// The API issues and validates its own JWTs with a symmetric key from configuration; a Google
     /// token is only ever accepted by the Google-identity sign-in endpoint, never by the bearer
     /// scheme. Required secrets are enforced outside Development so a deployed host cannot start
-    /// without them.
+    /// without them. The development Google token bypass is registered only when the host is in
+    /// Development <em>and</em> the developer has opted in through
+    /// <see cref="DevelopmentGoogleTokenBypassOptions"/>; otherwise the real
+    /// <see cref="GoogleIdentityTokenValidator"/> is used.
     /// </remarks>
     /// <param name="services">The service collection to configure.</param>
     /// <param name="configuration">The configuration that supplies the JWT and Google settings.</param>
@@ -74,17 +77,25 @@ public static class AuthenticationServiceCollectionExtensions
                 + "for local development, or the 'Authentication__Google__ClientId' environment variable in a deployed environment.");
         }
 
+        // The development bypass is off unless a developer has explicitly opted in. Null means the
+        // section is absent, so the default (false) applies; a deployed host cannot inherit an
+        // enabled value from a committed settings file.
+        var bypassOptions = configuration.GetSection(DevelopmentGoogleTokenBypassOptions.SectionName)
+            .Get<DevelopmentGoogleTokenBypassOptions>() ?? new DevelopmentGoogleTokenBypassOptions();
+
         services.AddSingleton(jwtOptions);
         services.AddSingleton(googleOptions);
+        services.AddSingleton(bypassOptions);
 
         services.AddSingleton<IApiTokenService, ApiTokenService>();
         services.AddScoped<IAuthenticationService, AuthenticationService>();
         services.AddSingleton<GoogleIdentityTokenValidator>();
 
-        if (isDevelopment)
+        if (isDevelopment && bypassOptions.Enabled)
         {
             // The development bypass is a separate class whose constructor refuses to be constructed
-            // outside Development, so it can never be active in a deployed environment.
+            // outside Development or when the opt-in is not enabled, so it can never be active in a
+            // deployed environment or by the environment name alone.
             services.AddSingleton<IGoogleTokenValidator, DevelopmentGoogleTokenValidator>();
         }
         else
