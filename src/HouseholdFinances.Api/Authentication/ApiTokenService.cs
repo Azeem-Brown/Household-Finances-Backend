@@ -54,10 +54,11 @@ public sealed class ApiTokenService : IApiTokenService
 
         var issuedAt = DateTime.UtcNow;
         var expiresAt = issuedAt.AddMinutes(_options.AccessTokenLifetimeMinutes);
+        var jti = Guid.NewGuid().ToString();
 
-        var token = CreateToken(user, _options.Audience, AccessTokenUse, issuedAt, expiresAt);
+        var token = CreateToken(user, _options.Audience, AccessTokenUse, jti, issuedAt, expiresAt);
 
-        return new ApiToken(token, expiresAt);
+        return new ApiToken(token, expiresAt, jti);
     }
 
     /// <inheritdoc />
@@ -67,14 +68,15 @@ public sealed class ApiTokenService : IApiTokenService
 
         var issuedAt = DateTime.UtcNow;
         var expiresAt = issuedAt.AddDays(_options.RefreshTokenLifetimeDays);
+        var jti = Guid.NewGuid().ToString();
 
-        var token = CreateToken(user, _options.RefreshAudience, RefreshTokenUse, issuedAt, expiresAt);
+        var token = CreateToken(user, _options.RefreshAudience, RefreshTokenUse, jti, issuedAt, expiresAt);
 
-        return new ApiToken(token, expiresAt);
+        return new ApiToken(token, expiresAt, jti);
     }
 
     /// <inheritdoc />
-    public async Task<Guid> ValidateRefreshTokenAsync(
+    public async Task<ValidatedRefreshToken> ValidateRefreshTokenAsync(
         string refreshToken,
         CancellationToken cancellationToken = default)
     {
@@ -125,13 +127,22 @@ public sealed class ApiTokenService : IApiTokenService
             throw new InvalidRefreshTokenException("The refresh token has no valid user identifier.");
         }
 
-        return userId;
+        // The jti is required so the presented token can be matched to the row recorded at issue
+        // time; a token without one cannot be enforced as single-use.
+        var jti = result.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;
+        if (string.IsNullOrWhiteSpace(jti))
+        {
+            throw new InvalidRefreshTokenException("The refresh token has no valid identifier.");
+        }
+
+        return new ValidatedRefreshToken(userId, jti);
     }
 
     private string CreateToken(
         User user,
         string audience,
         string tokenUse,
+        string jti,
         DateTime issuedAt,
         DateTime expiresAt)
     {
@@ -152,7 +163,7 @@ public sealed class ApiTokenService : IApiTokenService
                 [ClaimTypes.NameIdentifier] = userId,
                 [JwtRegisteredClaimNames.Name] = user.Name,
                 [JwtRegisteredClaimNames.Email] = user.Email,
-                [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString(),
+                [JwtRegisteredClaimNames.Jti] = jti,
                 [TokenUseClaimType] = tokenUse,
             },
         };

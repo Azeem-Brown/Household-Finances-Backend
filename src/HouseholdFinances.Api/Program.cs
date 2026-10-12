@@ -31,6 +31,8 @@ builder.Services.AddHouseholdFinancesUserDomain();
 builder.Services.AddHouseholdFinancesIncomeDomain();
 // Bill domain service implementation (Infrastructure).
 builder.Services.AddHouseholdFinancesBillDomain();
+// Refresh-token store used to enforce single use and family revocation (Infrastructure).
+builder.Services.AddHouseholdFinancesRefreshTokens();
 // Goal domain service implementation (Infrastructure).
 builder.Services.AddHouseholdFinancesGoalDomain();
 

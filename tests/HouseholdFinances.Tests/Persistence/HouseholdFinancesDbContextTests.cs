@@ -165,6 +165,37 @@ public class HouseholdFinancesDbContextTests
         }
     }
 
+    [Fact]
+    public void Model_ConfiguresRefreshTokensForSingleUseAndFamilyRevocation()
+    {
+        var context = CreateContext(BuildTestConfiguration(), out var provider);
+        using (provider)
+        {
+            var token = context.Model.FindEntityType(typeof(RefreshToken));
+            Assert.NotNull(token);
+
+            // The consumed flag drives the conditional update that makes the first refresh win.
+            Assert.True(token!.FindProperty(nameof(RefreshToken.Consumed))!.IsConcurrencyToken);
+            Assert.Equal("char(36)", token.FindProperty(nameof(RefreshToken.FamilyId))!.GetColumnType());
+            Assert.Equal("char(36)", token.FindProperty(nameof(RefreshToken.UserId))!.GetColumnType());
+
+            // A token is recorded once, matched on its unique jti.
+            var jtiIndex = token.GetIndexes().SingleOrDefault(candidate =>
+                candidate.Properties.Select(property => property.Name)
+                    .SequenceEqual(new[] { nameof(RefreshToken.Jti) }));
+            Assert.NotNull(jtiIndex);
+            Assert.True(jtiIndex!.IsUnique);
+
+            AssertForeignKey<RefreshToken, RefreshTokenFamily>(context.Model, nameof(RefreshToken.FamilyId));
+            AssertForeignKey<RefreshToken, User>(context.Model, nameof(RefreshToken.UserId));
+
+            var family = context.Model.FindEntityType(typeof(RefreshTokenFamily));
+            Assert.NotNull(family);
+            Assert.False(family!.FindProperty(nameof(RefreshTokenFamily.Revoked))!.IsNullable);
+            AssertForeignKey<RefreshTokenFamily, User>(context.Model, nameof(RefreshTokenFamily.UserId));
+        }
+    }
+
     private static void AssertForeignKey<TDependent, TPrincipal>(
         IModel model,
         string foreignKeyPropertyName)

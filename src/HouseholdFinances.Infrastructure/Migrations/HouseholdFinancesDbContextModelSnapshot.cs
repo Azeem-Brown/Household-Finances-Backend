@@ -187,6 +187,66 @@ namespace HouseholdFinances.Infrastructure.Migrations
                     b.ToTable("Items", (string)null);
                 });
 
+            modelBuilder.Entity("HouseholdFinances.Domain.Entities.RefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("Consumed")
+                        .IsConcurrencyToken()
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("IssuedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Jti")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("FamilyId");
+
+                    b.HasIndex("Jti")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RefreshTokens", (string)null);
+                });
+
+            modelBuilder.Entity("HouseholdFinances.Domain.Entities.RefreshTokenFamily", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<bool>("Revoked")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RefreshTokenFamilies", (string)null);
+                });
+
             modelBuilder.Entity("HouseholdFinances.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -282,6 +342,30 @@ namespace HouseholdFinances.Infrastructure.Migrations
                     b.HasOne("HouseholdFinances.Domain.Entities.Household", null)
                         .WithMany()
                         .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("HouseholdFinances.Domain.Entities.RefreshToken", b =>
+                {
+                    b.HasOne("HouseholdFinances.Domain.Entities.RefreshTokenFamily", null)
+                        .WithMany()
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HouseholdFinances.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("HouseholdFinances.Domain.Entities.RefreshTokenFamily", b =>
+                {
+                    b.HasOne("HouseholdFinances.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

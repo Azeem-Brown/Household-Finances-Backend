@@ -92,4 +92,17 @@ public static class InfrastructureServiceCollectionExtensions
 
         return services;
     }
-}
+    /// <summary>
+    /// Registers the refresh-token store used to enforce single use and family revocation. It is
+    /// scoped so it shares the request's <see cref="Persistence.HouseholdFinancesDbContext"/>.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The same service collection, so calls can be chained.</returns>
+    public static IServiceCollection AddHouseholdFinancesRefreshTokens(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+
+        return services;
+    }}

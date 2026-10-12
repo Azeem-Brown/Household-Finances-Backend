@@ -41,6 +41,12 @@ public class HouseholdFinancesDbContext : DbContext
 
     public DbSet<Goal> Goals => Set<Goal>();
 
+    /// <summary>Refresh-token families; the unit of revocation for refresh tokens.</summary>
+    public DbSet<RefreshTokenFamily> RefreshTokenFamilies => Set<RefreshTokenFamily>();
+
+    /// <summary>Issued refresh tokens, recorded so each can be consumed exactly once.</summary>
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
