@@ -22,7 +22,9 @@ public class GoalConfiguration : IEntityTypeConfiguration<Goal>
         builder.Property(goal => goal.StartDate).IsRequired();
         builder.Property(goal => goal.EndDate).IsRequired();
         builder.Property(goal => goal.Recurring).IsRequired();
-        builder.Property(goal => goal.Interval).IsRequired();
+        // Interval is optional: a non-recurring goal stores NULL, a recurring goal stores its cadence.
+        // The column is nullable so the two are distinguishable in storage, matching Income and Bills.
+        builder.Property(goal => goal.Interval);
         builder.Property(goal => goal.HouseholdId).HasColumnType(HouseholdFinancesDbContext.GuidColumnType);
         builder.Property(goal => goal.UserId).HasColumnType(HouseholdFinancesDbContext.GuidColumnType);
         builder.Property(goal => goal.Total).HasColumnType(HouseholdFinancesDbContext.MoneyColumnType);

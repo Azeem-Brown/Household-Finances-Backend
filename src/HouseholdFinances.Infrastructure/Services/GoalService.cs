@@ -1,0 +1,245 @@
+using HouseholdFinances.Domain.Abstractions;
+using HouseholdFinances.Domain.Entities;
+using HouseholdFinances.Domain.Errors;
+using HouseholdFinances.Domain.Models;
+using HouseholdFinances.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
+namespace HouseholdFinances.Infrastructure.Services;
+
+/// <summary>
+/// Implements the Goal operations for a household the current, authenticated user belongs to. The
+/// current user is resolved from <see cref="ICurrentUserService"/>; a household the user is not a
+/// member of is reported as not found. A goal carries its household key directly and is attributed
+/// to its creator, so a household's goals are the rows tagged with that household. The specification
+/// omits a dedicated repository for Goals, so this service uses
+/// <see cref="HouseholdFinancesDbContext"/> directly.
+/// </summary>
+public sealed class GoalService : IGoalService
+{
+    /// <summary>
+    /// Identifier of significance reported when the goal's label fails validation. The error
+    /// convention is <c>&lt;enum&gt; &lt;identifier&gt;</c>, so the identifier is the field being
+    /// validated.
+    /// </summary>
+    public const string NameIdentifier = "Name";
+
+    /// <summary>Identifier of significance reported when the goal's value fails validation.</summary>
+    public const string ValueIdentifier = "Value";
+
+    /// <summary>
+    /// Identifier of significance reported when the date range fails validation. EndDate is the
+    /// field that must not precede StartDate.
+    /// </summary>
+    public const string EndDateIdentifier = "EndDate";
+
+    /// <summary>Identifier of significance reported when a recurring goal omits its interval.</summary>
+    public const string IntervalIdentifier = "Interval";
+
+    /// <summary>
+    /// Identifier of significance reported when the current user cannot be resolved from the
+    /// authenticated principal. A fixed token is used so no user-supplied value reaches the response
+    /// or logs.
+    /// </summary>
+    public const string CurrentUserIdentifier = "me";
+
+    /// <summary>
+    /// The contribution total a newly created goal starts with. A goal begins with no contributions
+    /// and the total is changed only through the update operation (a recorded assumption).
+    /// </summary>
+    public const double InitialTotal = 0d;
+
+    private readonly HouseholdFinancesDbContext _context;
+    private readonly ICurrentUserService _currentUserService;
+
+    /// <summary>Creates the service.</summary>
+    /// <param name="context">The EF Core context for the household finances schema.</param>
+    /// <param name="currentUserService">Resolves the authenticated user for the current request.</param>
+    public GoalService(HouseholdFinancesDbContext context, ICurrentUserService currentUserService)
+    {
+        _context = context ?? throw new ArgumentNullException(nameof(context));
+        _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
+    }
+
+    /// <inheritdoc />
+    public async Task<GoalDetail> CreateAsync(
+        Guid householdId,
+        GoalInput input,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        var validated = Validate(input);
+        var userId = ResolveCurrentUserId();
+        await EnsureMemberAsync(householdId, userId, cancellationToken);
+
+        var goal = new Goal
+        {
+            Id = Guid.NewGuid(),
+            Name = validated.Name,
+            Value = validated.Value,
+            StartDate = validated.StartDate,
+            EndDate = validated.EndDate,
+            Recurring = validated.Recurring,
+            Interval = validated.Interval,
+            HouseholdId = householdId,
+            UserId = userId,
+            // A new goal starts with no contributions; the total changes only through update.
+            Total = InitialTotal
+        };
+
+        _context.Goals.Add(goal);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return ToDetail(goal);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<GoalDetail>> ListAsync(
+        Guid householdId,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = ResolveCurrentUserId();
+        await EnsureMemberAsync(householdId, userId, cancellationToken);
+
+        var goals = await _context.Goals
+            .Where(goal => goal.HouseholdId == householdId)
+            .OrderBy(goal => goal.StartDate)
+            .ThenBy(goal => goal.Name)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        return goals.Select(ToDetail).ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<GoalDetail> UpdateAsync(
+        Guid householdId,
+        Guid goalId,
+        GoalInput input,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        var validated = Validate(input);
+        var userId = ResolveCurrentUserId();
+        await EnsureMemberAsync(householdId, userId, cancellationToken);
+
+        var goal = await FindInHouseholdAsync(householdId, goalId, cancellationToken)
+            ?? throw new HouseholdFinancesException(ErrorCode.NotFound, goalId);
+
+        goal.Name = validated.Name;
+        goal.Value = validated.Value;
+        goal.StartDate = validated.StartDate;
+        goal.EndDate = validated.EndDate;
+        goal.Recurring = validated.Recurring;
+        goal.Interval = validated.Interval;
+        goal.Total = validated.Total;
+        // HouseholdId and UserId are attribution and are intentionally left unchanged.
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return ToDetail(goal);
+    }
+
+    private static ValidatedGoal Validate(GoalInput input)
+    {
+        var trimmedName = input.Name?.Trim();
+        if (string.IsNullOrEmpty(trimmedName))
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, NameIdentifier);
+        }
+
+        if (input.Value < 0)
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, ValueIdentifier);
+        }
+
+        if (input.StartDate > input.EndDate)
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, EndDateIdentifier);
+        }
+
+        if (input.Recurring && input.Interval is null)
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, IntervalIdentifier);
+        }
+
+        // Money is USD with two decimal places, half-up (recorded decision). A non-recurring goal
+        // carries no cadence and is stored as NULL; a recurring goal keeps the interval that the
+        // check above required. This matches the Income and Bill domains so the three stay consistent.
+        return new ValidatedGoal(
+            trimmedName,
+            RoundMoney(input.Value),
+            input.StartDate,
+            input.EndDate,
+            input.Recurring,
+            input.Interval,
+            RoundMoney(input.Total));
+    }
+
+    private async Task EnsureMemberAsync(Guid householdId, Guid userId, CancellationToken cancellationToken)
+    {
+        var isMember = await _context.UserHouseholds.AnyAsync(
+            membership => membership.HouseholdId == householdId && membership.UserId == userId,
+            cancellationToken);
+
+        // A household the user is not a member of is reported as not found, so the API never
+        // discloses the existence of another household's goals.
+        if (!isMember)
+        {
+            throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
+        }
+    }
+
+    private Task<Goal?> FindInHouseholdAsync(
+        Guid householdId,
+        Guid goalId,
+        CancellationToken cancellationToken) =>
+        _context.Goals.FirstOrDefaultAsync(
+            goal => goal.Id == goalId && goal.HouseholdId == householdId,
+            cancellationToken);
+
+    private static GoalDetail ToDetail(Goal goal) =>
+        new(
+            goal.Id,
+            goal.Name,
+            goal.Value,
+            goal.StartDate,
+            goal.EndDate,
+            goal.Recurring,
+            goal.Interval,
+            goal.HouseholdId,
+            goal.UserId,
+            goal.Total);
+
+    // Money is USD with two decimal places, half-up (recorded decision).
+    private static double RoundMoney(double value) =>
+        Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private Guid ResolveCurrentUserId()
+    {
+        var identifier = _currentUserService.UserIdentifier;
+
+        if (!_currentUserService.IsAuthenticated
+            || string.IsNullOrWhiteSpace(identifier)
+            || !Guid.TryParse(identifier, out var userId))
+        {
+            // Defense in depth: the default authorization policy already rejects unauthenticated
+            // requests with 401 before the action runs.
+            throw new HouseholdFinancesException(ErrorCode.Unauthorized, CurrentUserIdentifier);
+        }
+
+        return userId;
+    }
+
+    /// <summary>A goal input whose fields have passed validation and normalization.</summary>
+    private sealed record ValidatedGoal(
+        string Name,
+        double Value,
+        DateTime StartDate,
+        DateTime EndDate,
+        bool Recurring,
+        Interval? Interval,
+        double Total);
+}

@@ -31,6 +31,8 @@ builder.Services.AddHouseholdFinancesUserDomain();
 builder.Services.AddHouseholdFinancesIncomeDomain();
 // Bill domain service implementation (Infrastructure).
 builder.Services.AddHouseholdFinancesBillDomain();
+// Goal domain service implementation (Infrastructure).
+builder.Services.AddHouseholdFinancesGoalDomain();
 
 // Authentication/authorization plumbing. The API validates a Google Identity ID token at the
 // sign-in endpoint and issues its own JWT, which this bearer scheme validates on every request.

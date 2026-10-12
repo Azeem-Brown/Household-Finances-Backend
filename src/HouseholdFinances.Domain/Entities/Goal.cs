@@ -18,7 +18,13 @@ public class Goal
 
     public bool Recurring { get; set; }
 
-    public Interval Interval { get; set; }
+    /// <summary>
+    /// The cadence used when <see cref="Recurring"/> is true; <see langword="null"/> for a one-off
+    /// goal, so a non-recurring goal is distinguishable in storage from a daily one. This extends the
+    /// nullable-interval decision for Income and Bills (issue #30) to Goals so the domain stays
+    /// consistent.
+    /// </summary>
+    public Interval? Interval { get; set; }
 
     public Guid HouseholdId { get; set; }
 

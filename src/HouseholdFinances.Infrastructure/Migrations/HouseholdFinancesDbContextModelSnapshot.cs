@@ -74,7 +74,7 @@ namespace HouseholdFinances.Infrastructure.Migrations
                     b.Property<Guid>("HouseholdId")
                         .HasColumnType("char(36)");
 
-                    b.Property<int>("Interval")
+                    b.Property<int?>("Interval")
                         .HasColumnType("int");
 
                     b.Property<string>("Name")
