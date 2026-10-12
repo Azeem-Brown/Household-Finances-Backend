@@ -1,0 +1,35 @@
+# Development-only MySQL definition for the Household Finances API.
+#
+# This file is for local development only. The credentials below are deliberately
+# non-secret development values and must never be reused for a deployed environment.
+#
+# Usage (requires Docker):
+#   docker compose up -d
+#
+# The service matches the MySQL version the API expects (8.0.21 or newer, see
+# MySqlServerVersionDefaults) and exposes it on the conventional host port 3306.
+# If a native MySQL already listens on 3306, see the troubleshooting section in
+# README.md (stop the native service or remap the published port).
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      # Non-secret development credentials.
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: household_finances
+      MYSQL_USER: household_dev
+      MYSQL_PASSWORD: devpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - household-finances-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  household-finances-mysql-data:
