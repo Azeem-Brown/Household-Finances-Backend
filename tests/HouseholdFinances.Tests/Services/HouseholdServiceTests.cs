@@ -213,6 +213,8 @@ public class HouseholdServiceTests
 
         public Dictionary<Guid, HouseholdTotals> Totals { get; } = new();
 
+        public Dictionary<Guid, HouseholdLogo> Logos { get; } = new();
+
         public bool MembershipAlwaysExists { get; set; }
 
         public int SaveCount { get; private set; }
@@ -272,6 +274,20 @@ public class HouseholdServiceTests
             Memberships.Add(membership);
             return Task.CompletedTask;
         }
+
+        public Task<HouseholdLogo?> GetLogoAsync(
+            Guid householdId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Logos.TryGetValue(householdId, out var logo) ? logo : null);
+
+        public Task UpsertLogoAsync(HouseholdLogo logo, CancellationToken cancellationToken = default)
+        {
+            Logos[logo.HouseholdId] = logo;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> RemoveLogoAsync(Guid householdId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Logos.Remove(householdId));
 
         public Task SaveChangesAsync(CancellationToken cancellationToken = default)
         {

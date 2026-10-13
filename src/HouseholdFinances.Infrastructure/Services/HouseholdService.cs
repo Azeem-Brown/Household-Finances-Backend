@@ -26,6 +26,40 @@ public sealed class HouseholdService : IHouseholdService
     /// </summary>
     public const string CurrentUserIdentifier = "me";
 
+    /// <summary>
+    /// Identifier of significance reported when an upload carries no readable image. The error
+    /// convention is <c>&lt;enum&gt; &lt;identifier&gt;</c>, so the identifier names the field that
+    /// failed validation.
+    /// </summary>
+    public const string LogoIdentifier = "Logo";
+
+    /// <summary>Identifier reported when the uploaded image is not one of the accepted media types.</summary>
+    public const string LogoContentTypeIdentifier = "LogoContentType";
+
+    /// <summary>Identifier reported when the uploaded image exceeds <see cref="MaxLogoBytes"/>.</summary>
+    public const string LogoSizeIdentifier = "LogoSize";
+
+    /// <summary>
+    /// Largest accepted logo, in bytes. The database column holds far more, so this ceiling is a
+    /// domain decision about how large a household logo should reasonably be, not a storage limit.
+    /// </summary>
+    public const int MaxLogoBytes = 2 * 1024 * 1024;
+
+    /// <summary>
+    /// Largest accepted logo upload request, in bytes. A multipart envelope adds boundaries and part
+    /// headers, so this sits above <see cref="MaxLogoBytes"/>; the exact image ceiling is still
+    /// enforced against the decoded bytes, which is what a client cannot pad around.
+    /// </summary>
+    public const int MaxLogoUploadRequestBytes = MaxLogoBytes + (64 * 1024);
+
+    /// <summary>The media types accepted for a household logo.</summary>
+    public static readonly IReadOnlyList<string> AllowedLogoContentTypes = new[]
+    {
+        "image/png",
+        "image/jpeg",
+        "image/webp"
+    };
+
     private readonly IHouseholdRepository _repository;
     private readonly ICurrentUserService _currentUserService;
 
@@ -111,6 +145,91 @@ public sealed class HouseholdService : IHouseholdService
         var totals = await _repository.GetTotalsAsync(householdId, cancellationToken);
 
         return ToDetail(household, totals);
+    }
+
+    /// <inheritdoc />
+    public async Task SetLogoAsync(
+        Guid householdId,
+        byte[]? content,
+        string? contentType,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureMemberAsync(householdId, cancellationToken);
+
+        // Any media-type parameters are dropped before matching, so a client that sends
+        // "image/png; charset=binary" is accepted rather than rejected for the suffix.
+        var mediaType = contentType?.Split(';', 2)[0].Trim().ToLowerInvariant();
+
+        // Every check runs before anything is written. A rejected upload must never replace a logo
+        // the household already has, which is why this is not a single combined condition: the
+        // identifier tells the client which rule failed.
+        if (content is null || content.Length == 0)
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, LogoIdentifier);
+        }
+
+        if (string.IsNullOrEmpty(mediaType) || !AllowedLogoContentTypes.Contains(mediaType))
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, LogoContentTypeIdentifier);
+        }
+
+        if (content.Length > MaxLogoBytes)
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, LogoSizeIdentifier);
+        }
+
+        await _repository.UpsertLogoAsync(
+            new HouseholdLogo
+            {
+                HouseholdId = householdId,
+                Content = content,
+                ContentType = mediaType,
+                UpdatedAtUtc = DateTime.UtcNow
+            },
+            cancellationToken);
+
+        await _repository.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<HouseholdLogoContent?> GetLogoAsync(
+        Guid householdId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureMemberAsync(householdId, cancellationToken);
+
+        var logo = await _repository.GetLogoAsync(householdId, cancellationToken);
+
+        return logo is null
+            ? null
+            : new HouseholdLogoContent(logo.Content, logo.ContentType);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> RemoveLogoAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        await EnsureMemberAsync(householdId, cancellationToken);
+
+        if (!await _repository.RemoveLogoAsync(householdId, cancellationToken))
+        {
+            return false;
+        }
+
+        await _repository.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves the current user and confirms they belong to the household, raising the same errors
+    /// every other household operation raises. A non-member is reported as not found, so the logo
+    /// endpoints cannot be used to discover another user's household.
+    /// </summary>
+    private async Task EnsureMemberAsync(Guid householdId, CancellationToken cancellationToken)
+    {
+        var userId = ResolveCurrentUserId();
+
+        _ = await _repository.GetForMemberAsync(householdId, userId, cancellationToken)
+            ?? throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
     }
 
     private static HouseholdDetail ToDetail(Household household, HouseholdTotals totals) =>

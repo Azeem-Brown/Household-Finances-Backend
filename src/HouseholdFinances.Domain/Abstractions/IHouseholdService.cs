@@ -63,4 +63,48 @@ public interface IHouseholdService
     /// not a member of the household (<see cref="Errors.ErrorCode.NotFound"/>).
     /// </exception>
     Task<HouseholdDetail> GetByIdAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets or replaces the household's logo. The current user must be a member. The upload is
+    /// validated before anything is written, so a rejected upload leaves any existing logo in place.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="content">The image bytes.</param>
+    /// <param name="contentType">The media type reported by the client, matched against the accepted image types.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>); the user is not
+    /// a member of the household, or no such household exists
+    /// (<see cref="Errors.ErrorCode.NotFound"/>); or the upload is empty, an unsupported media type,
+    /// or larger than the accepted size (<see cref="Errors.ErrorCode.InvalidInput"/>).
+    /// </exception>
+    Task SetLogoAsync(
+        Guid householdId,
+        byte[]? content,
+        string? contentType,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the household's logo. The current user must be a member.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The logo, or <c>null</c> when the household has none.</returns>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>), or the user is
+    /// not a member of the household (<see cref="Errors.ErrorCode.NotFound"/>).
+    /// </exception>
+    Task<HouseholdLogoContent?> GetLogoAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes the household's logo. The current user must be a member.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns><c>true</c> when a logo was removed; <c>false</c> when the household had none.</returns>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>), or the user is
+    /// not a member of the household (<see cref="Errors.ErrorCode.NotFound"/>).
+    /// </exception>
+    Task<bool> RemoveLogoAsync(Guid householdId, CancellationToken cancellationToken = default);
 }

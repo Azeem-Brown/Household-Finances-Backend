@@ -47,6 +47,12 @@ public class HouseholdFinancesDbContext : DbContext
     /// <summary>Issued refresh tokens, recorded so each can be consumed exactly once.</summary>
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+    /// <summary>
+    /// Household logos. Kept out of <see cref="Households"/> so the image bytes never travel with
+    /// the household reads that run on every page load.
+    /// </summary>
+    public DbSet<HouseholdLogo> HouseholdLogos => Set<HouseholdLogo>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
