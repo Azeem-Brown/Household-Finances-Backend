@@ -161,6 +161,48 @@ public sealed class HouseholdRepository : IHouseholdRepository
     }
 
     /// <inheritdoc />
+    public Task<HouseholdLogo?> GetLogoAsync(Guid householdId, CancellationToken cancellationToken = default) =>
+        _context.HouseholdLogos
+            .AsNoTracking()
+            .FirstOrDefaultAsync(logo => logo.HouseholdId == householdId, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task UpsertLogoAsync(HouseholdLogo logo, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(logo);
+
+        // Tracked so a replace updates the single existing row rather than attempting a duplicate
+        // primary key. Both the household identifier and the image are keyed together.
+        var existing = await _context.HouseholdLogos
+            .FirstOrDefaultAsync(candidate => candidate.HouseholdId == logo.HouseholdId, cancellationToken);
+
+        if (existing is null)
+        {
+            _context.HouseholdLogos.Add(logo);
+            return;
+        }
+
+        existing.Content = logo.Content;
+        existing.ContentType = logo.ContentType;
+        existing.UpdatedAtUtc = logo.UpdatedAtUtc;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> RemoveLogoAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        var existing = await _context.HouseholdLogos
+            .FirstOrDefaultAsync(logo => logo.HouseholdId == householdId, cancellationToken);
+
+        if (existing is null)
+        {
+            return false;
+        }
+
+        _context.HouseholdLogos.Remove(existing);
+        return true;
+    }
+
+    /// <inheritdoc />
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         _context.SaveChangesAsync(cancellationToken);
 }
