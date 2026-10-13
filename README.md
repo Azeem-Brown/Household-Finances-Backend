@@ -109,12 +109,34 @@ Authentication and authorization are registered by `AddHouseholdFinancesAuthenti
   The default `HttpContextCurrentUserService` reads the identifier from the
   `ClaimTypes.NameIdentifier` claim of the authenticated principal.
 
-The concrete scheme is **not** configured yet. Until it is, a provider-agnostic placeholder scheme
-(`DeferredAuthenticationHandler`) never authenticates a request, so the pipeline is registered and
-the host still starts. The single replacement point is the marked block in
-`AddHouseholdFinancesAuthentication`; the deferred authentication service issue (backend #11)
-supplies the real Google Identity token validation and API-issued JWT there. No provider-specific
-configuration is hard-coded.
+The Google identity sign-in endpoint validates an incoming Google ID token through
+`IGoogleTokenValidator`, after which the API issues its own JWT access and refresh tokens and the
+bearer scheme validates them on every request. The real validator is `GoogleIdentityTokenValidator`,
+which verifies the token against Google's published signing certificates and the configured client
+id.
+
+### Development Google token bypass
+
+For local testing without real Google credentials the API can accept a locally generated token of
+the form `dev:<subject>` (for example `dev:local-user-1`) in place of a real Google ID token; the
+remainder of the token becomes the signed-in user's Google subject. The bypass is **off by default**
+and is honored only in the **Development** environment. Enable it per developer, never in a
+committed settings file, with user secrets:
+
+```powershell
+dotnet user-secrets set "Authentication:Google:DevelopmentBypass:Enabled" "true" --project src/HouseholdFinances.Api
+```
+
+or the equivalent environment variable:
+
+```powershell
+$env:Authentication__Google__DevelopmentBypass__Enabled = "true"
+```
+
+With the bypass off (the default) a `dev:` token is rejected because the real validator is used, so
+sign-in requires a genuine Google ID token. Enabling the setting outside Development makes the host
+refuse to start with an `InvalidOperationException` that names the setting, and while the bypass is
+active the host logs a warning at startup.
 
 ## Error handling
 
@@ -238,11 +260,18 @@ $env:ASPNETCORE_ENVIRONMENT = 'Development'
 dotnet run --project src/HouseholdFinances.Api --no-launch-profile --urls http://localhost:5252
 ```
 
-In Development a development token bypass is active: `POST /api/v1/auth/google` accepts a
-token of the form `dev:<subject>` in place of a real Google ID token, so an authenticated
-call can be exercised without Google credentials. Open
-`src/HouseholdFinances.Api/HouseholdFinances.Api.http` and run the sign-in request followed
-by the `/api/v1/users/me` request.
+In Development the API can accept a development token of the form `dev:<subject>` in place of a
+real Google ID token, so an authenticated call can be exercised without Google credentials. This
+bypass is **off by default** and must be opted in per developer (see
+[Development Google token bypass](#development-google-token-bypass)); enable it before running the
+host:
+
+```powershell
+dotnet user-secrets set "Authentication:Google:DevelopmentBypass:Enabled" "true" --project src/HouseholdFinances.Api
+```
+
+Then open `src/HouseholdFinances.Api/HouseholdFinances.Api.http` and run the sign-in request
+followed by the `/api/v1/users/me` request.
 
 ## Build, test, and run
 

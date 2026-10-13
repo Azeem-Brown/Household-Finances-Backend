@@ -47,8 +47,30 @@ builder.Services.AddCurrentUserAccessor();
 
 var app = builder.Build();
 
-// Startup guard: the development Google token bypass must never be active outside Development.
-// Registration already scopes it to Development; this makes a misconfiguration fail fast.
+// Startup guard: the development Google token bypass opt-in must never be enabled outside
+// Development. Registration already scopes the bypass to Development and requires the opt-in;
+// this makes a misconfiguration fail fast and names the offending setting.
+var bypassOptions = app.Services.GetRequiredService<DevelopmentGoogleTokenBypassOptions>();
+if (bypassOptions.Enabled && !app.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException(
+        $"The development Google token bypass '{DevelopmentGoogleTokenBypassOptions.SectionName}:Enabled' "
+        + "is enabled, but the host is not running in the Development environment. The bypass is "
+        + "development-only; remove the setting or set it to false.");
+}
+
+if (bypassOptions.Enabled && app.Environment.IsDevelopment())
+{
+    // Visible in the console at startup so an enabled bypass is never mistaken for real sign-in.
+    app.Logger.LogWarning(
+        "The development Google token bypass is active: the API accepts any token prefixed with "
+        + "'{Prefix}' as the signed-in identity. This is for local development only and must never "
+        + "be enabled outside Development.",
+        DevelopmentGoogleTokenValidator.TokenPrefix);
+}
+
+// Defense in depth: even if a future change registered the bypass validator directly, it must
+// never be active outside Development.
 if (!app.Environment.IsDevelopment()
     && app.Services.GetRequiredService<IGoogleTokenValidator>() is DevelopmentGoogleTokenValidator)
 {

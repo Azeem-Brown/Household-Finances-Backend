@@ -1,7 +1,9 @@
 @HouseholdFinances.Api_HostAddress = http://localhost:5252
 
-# In Development the API accepts a locally generated token of the form "dev:<subject>" in place
-# of a real Google ID token, so sign-in can be exercised without Google credentials.
+# In Development, with the development bypass opted in
+# (Authentication:Google:DevelopmentBypass:Enabled=true), the API accepts a locally generated
+# token of the form "dev:<subject>" in place of a real Google ID token, so sign-in can be
+# exercised without Google credentials. The bypass is off by default.
 @DevIdToken = dev:local-developer
 
 GET {{HouseholdFinances.Api_HostAddress}}/
