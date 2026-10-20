@@ -63,6 +63,18 @@ public interface IHouseholdRepository
         PeriodWindow window,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Counts the household's stored entries: the member users' income entries and the household's
+    /// bill entries. The counts are deliberately window-independent, so nothing here is expanded or
+    /// filtered by date; one recurring entry counts once.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The entry counts, zero when the household has no entries.</returns>
+    Task<HouseholdEntryCounts> GetEntryCountsAsync(
+        Guid householdId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Adds a new household to the change tracker.</summary>
     /// <param name="household">The household to add.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>

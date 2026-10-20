@@ -29,6 +29,9 @@ public static class OpenApiConventions
         - Enums are serialized as their numeric values (for example Interval Monthly is 3).
         - Date-times are UTC and use ISO 8601 round-trip format (for example 2026-01-02T03:04:05.0000000Z).
         - Money is a JSON number (double) in USD, rounded to two decimal places.
+        - Household responses also carry incomeEntryCount and billEntryCount: the number of stored
+          income and bill entries. They count entries, not occurrences, and do not depend on the
+          optional period query value, so they stay the same for every period.
         """;
 
     /// <summary>Applies the document metadata and conventions description.</summary>

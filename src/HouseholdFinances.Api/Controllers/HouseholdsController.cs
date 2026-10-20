@@ -12,7 +12,10 @@ namespace HouseholdFinances.Api.Controllers;
 /// <see cref="ICurrentUserService"/>; no endpoint accepts a user id from the client. Only a member
 /// can read a household, and creating one also creates the current user's membership. Household
 /// totals cover the entry occurrences inside the calendar window selected by the optional
-/// <c>period</c> query parameter, which defaults to <see cref="Interval.Monthly"/>.
+/// <c>period</c> query parameter, which defaults to <see cref="Interval.Monthly"/>. The response
+/// also reports the number of stored income and bill entries, which does not depend on
+/// <c>period</c>, so a household with entries outside the selected window is distinguishable from
+/// one with no entries at all.
 /// </summary>
 [ApiController]
 [Route("households")]

@@ -380,6 +380,130 @@ public class HouseholdRepositoryTests
     }
 
     [Fact]
+    public async Task GetEntryCountsAsync_ReturnsZeroWhenThereAreNoEntries()
+    {
+        await using var context = CreateContext(nameof(GetEntryCountsAsync_ReturnsZeroWhenThereAreNoEntries));
+        var repository = new HouseholdRepository(context);
+
+        var counts = await repository.GetEntryCountsAsync(Guid.NewGuid());
+
+        Assert.Equal(0, counts.Incomes);
+        Assert.Equal(0, counts.Bills);
+    }
+
+    [Fact]
+    public async Task GetEntryCountsAsync_CountsStoredEntriesThatFallOutsideTheRequestedWindow()
+    {
+        await using var context = CreateContext(
+            nameof(GetEntryCountsAsync_CountsStoredEntriesThatFallOutsideTheRequestedWindow));
+        var householdId = Guid.NewGuid();
+
+        // Both entries end in 2025, so neither produces an occurrence in any 2026 window.
+        SeedEntries(
+            context,
+            householdId,
+            new EntrySpec(100d, Utc(2025, 1, 5), Utc(2025, 6, 30), Recurring: true, Interval.Monthly),
+            new EntrySpec(50d, Utc(2025, 3, 1), Utc(2025, 3, 1), Recurring: false, Interval: null));
+        await context.SaveChangesAsync();
+
+        var repository = new HouseholdRepository(context);
+
+        var counts = await repository.GetEntryCountsAsync(householdId);
+        var totals = await repository.GetTotalsAsync(householdId, WindowFor(Interval.Yearly));
+
+        Assert.Equal(2, counts.Incomes);
+        Assert.Equal(2, counts.Bills);
+        Assert.Equal(0d, totals.Incomes);
+        Assert.Equal(0d, totals.Payments);
+    }
+
+    [Fact]
+    public async Task GetEntryCountsAsync_CountsARecurringEntryOnceHoweverManyOccurrencesItProduces()
+    {
+        await using var context = CreateContext(
+            nameof(GetEntryCountsAsync_CountsARecurringEntryOnceHoweverManyOccurrencesItProduces));
+        var householdId = Guid.NewGuid();
+
+        // A biweekly series over a year produces many occurrences but is still one stored entry.
+        SeedEntries(
+            context,
+            householdId,
+            new EntrySpec(100d, Utc(2026, 1, 5), Utc(2026, 12, 31), Recurring: true, Interval.BiWeekly));
+        await context.SaveChangesAsync();
+
+        var repository = new HouseholdRepository(context);
+
+        var counts = await repository.GetEntryCountsAsync(householdId);
+        var totals = await repository.GetTotalsAsync(householdId, WindowFor(Interval.Yearly));
+
+        Assert.Equal(1, counts.Incomes);
+        Assert.Equal(1, counts.Bills);
+        Assert.True(totals.Incomes > 100d);
+        Assert.True(totals.Payments > 100d);
+    }
+
+    [Fact]
+    public async Task GetEntryCountsAsync_CountsOnlyTheHouseholdsMembersIncomesAndItsOwnBills()
+    {
+        await using var context = CreateContext(
+            nameof(GetEntryCountsAsync_CountsOnlyTheHouseholdsMembersIncomesAndItsOwnBills));
+        var householdId = Guid.NewGuid();
+        var otherHouseholdId = Guid.NewGuid();
+
+        context.UserHouseholds.AddRange(
+            new UserHousehold { Id = Guid.NewGuid(), UserId = UserId, HouseholdId = householdId },
+            new UserHousehold { Id = Guid.NewGuid(), UserId = OtherUserId, HouseholdId = otherHouseholdId });
+        context.Incomes.AddRange(
+            new Income
+            {
+                Id = Guid.NewGuid(),
+                Name = "Mine",
+                Value = 100d,
+                StartDate = Utc(2025, 1, 1),
+                EndDate = Utc(2025, 1, 1),
+                UserId = UserId
+            },
+            new Income
+            {
+                Id = Guid.NewGuid(),
+                Name = "Theirs",
+                Value = 100d,
+                StartDate = Utc(2025, 1, 1),
+                EndDate = Utc(2025, 1, 1),
+                UserId = OtherUserId
+            });
+        context.Bills.AddRange(
+            new Bill
+            {
+                Id = Guid.NewGuid(),
+                Name = "Mine",
+                Value = 100d,
+                StartDate = Utc(2025, 1, 1),
+                EndDate = Utc(2025, 1, 1),
+                HouseholdId = householdId,
+                UserId = UserId
+            },
+            new Bill
+            {
+                Id = Guid.NewGuid(),
+                Name = "Theirs",
+                Value = 100d,
+                StartDate = Utc(2025, 1, 1),
+                EndDate = Utc(2025, 1, 1),
+                HouseholdId = otherHouseholdId,
+                UserId = OtherUserId
+            });
+        await context.SaveChangesAsync();
+
+        var repository = new HouseholdRepository(context);
+
+        var counts = await repository.GetEntryCountsAsync(householdId);
+
+        Assert.Equal(1, counts.Incomes);
+        Assert.Equal(1, counts.Bills);
+    }
+
+    [Fact]
     public async Task AddAsync_AndAddMembershipAsync_PersistThroughSaveChanges()
     {
         const string databaseName = nameof(AddAsync_AndAddMembershipAsync_PersistThroughSaveChanges);
