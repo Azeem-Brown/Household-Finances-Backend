@@ -21,7 +21,11 @@ public class RefreshTokenServiceTests
 {
     private static readonly Guid UserId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid FamilyId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-    private static readonly DateTime Now = new(2026, 10, 12, 12, 0, 0, DateTimeKind.Utc);
+
+    // Fixture timestamps are relative to the wall clock because RefreshTokenService resolves expiry
+    // with DateTime.UtcNow. A fixed date here expired on 2026-10-19 and made every consume-based
+    // test fail with NotFound, so the fixture must not be pinned to a calendar date.
+    private static readonly DateTime Now = DateTime.UtcNow;
     private const string Jti = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
     [Fact]

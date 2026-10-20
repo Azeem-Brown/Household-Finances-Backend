@@ -49,15 +49,18 @@ public interface IHouseholdRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Computes the household's raw totals from its entries: the sum of the member users' income
-    /// entry values and the sum of the household's bill entry values. Each entry counts once;
-    /// recurrence is not expanded in this version.
+    /// Computes the household's raw totals for the occurrences that fall inside
+    /// <paramref name="window"/>: the sum of the member users' income occurrences and the sum of
+    /// the household's bill occurrences. Recurrence is expanded using the approved rule, and a
+    /// one-off counts once when its start date lies inside the window.
     /// </summary>
     /// <param name="householdId">The household's identifier.</param>
+    /// <param name="window">The inclusive calendar window to total.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The unrounded totals.</returns>
     Task<HouseholdTotals> GetTotalsAsync(
         Guid householdId,
+        PeriodWindow window,
         CancellationToken cancellationToken = default);
 
     /// <summary>Adds a new household to the change tracker.</summary>

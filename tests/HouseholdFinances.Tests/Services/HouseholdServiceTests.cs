@@ -14,6 +14,7 @@ public class HouseholdServiceTests
 {
     private static readonly Guid UserId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid HouseholdId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly DateTimeOffset PinnedNow = new(2026, 10, 14, 0, 0, 0, TimeSpan.Zero);
 
     [Fact]
     public async Task CreateAsync_CreatesTheHouseholdAndTheCurrentUsersMembership()
@@ -101,7 +102,7 @@ public class HouseholdServiceTests
             new UserHousehold { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), HouseholdId = unrelated.Id });
         repository.Totals[first.Id] = new HouseholdTotals(2250.50, 1500.00);
 
-        var details = await service.ListForCurrentUserAsync();
+        var details = await service.ListForCurrentUserAsync(Interval.Monthly);
 
         Assert.Equal(new[] { "Alpha Household", "Zeta Household" }, details.Select(detail => detail.Name));
         Assert.Equal(2250.50, details[0].Incomes);
@@ -114,7 +115,7 @@ public class HouseholdServiceTests
     {
         var (service, _, _) = CreateService();
 
-        Assert.Empty(await service.ListForCurrentUserAsync());
+        Assert.Empty(await service.ListForCurrentUserAsync(Interval.Monthly));
     }
 
     [Fact]
@@ -124,7 +125,7 @@ public class HouseholdServiceTests
         var (service, repository, _) = CreateService(household, isMember: true);
         repository.Totals[HouseholdId] = new HouseholdTotals(5200.126, 3100.124);
 
-        var detail = await service.GetByIdAsync(HouseholdId);
+        var detail = await service.GetByIdAsync(HouseholdId, Interval.Monthly);
 
         Assert.Equal(HouseholdId, detail.Id);
         Assert.Equal("Brown Household", detail.Name);
@@ -139,7 +140,7 @@ public class HouseholdServiceTests
         var (service, _, _) = CreateService(household, isMember: false);
 
         var exception = await Assert.ThrowsAsync<HouseholdFinancesException>(
-            () => service.GetByIdAsync(HouseholdId));
+            () => service.GetByIdAsync(HouseholdId, Interval.Monthly));
 
         Assert.Equal(ErrorCode.NotFound, exception.ErrorCode);
         Assert.Equal(HouseholdId, exception.Identifier);
@@ -152,7 +153,7 @@ public class HouseholdServiceTests
         var (service, _, _) = CreateService();
 
         var exception = await Assert.ThrowsAsync<HouseholdFinancesException>(
-            () => service.GetByIdAsync(HouseholdId));
+            () => service.GetByIdAsync(HouseholdId, Interval.Monthly));
 
         Assert.Equal(ErrorCode.NotFound, exception.ErrorCode);
         Assert.Equal(HouseholdId, exception.Identifier);
@@ -165,23 +166,82 @@ public class HouseholdServiceTests
         currentUser.IsAuthenticated = false;
 
         var exception = await Assert.ThrowsAsync<HouseholdFinancesException>(
-            () => service.GetByIdAsync(HouseholdId));
+            () => service.GetByIdAsync(HouseholdId, Interval.Monthly));
 
         Assert.Equal(ErrorCode.Unauthorized, exception.ErrorCode);
         Assert.Equal(HouseholdService.CurrentUserIdentifier, exception.Identifier);
     }
 
     [Fact]
+    public async Task ListForCurrentUserAsync_UsesTheWindowForTheRequestedPeriod()
+    {
+        var household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        var (service, repository, _) = CreateService(household, isMember: true);
+
+        await service.ListForCurrentUserAsync(Interval.Quarterly);
+
+        var request = Assert.Single(repository.TotalRequests);
+        Assert.Equal(HouseholdId, request.HouseholdId);
+        Assert.Equal(new DateOnly(2026, 10, 1), request.Window.Start);
+        Assert.Equal(new DateOnly(2026, 12, 31), request.Window.End);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_UsesTheWindowFromThePinnedClock()
+    {
+        var household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        var (service, repository, _) = CreateService(household, isMember: true);
+
+        await service.GetByIdAsync(HouseholdId, Interval.Yearly);
+
+        var request = Assert.Single(repository.TotalRequests);
+        Assert.Equal(new DateOnly(2026, 1, 1), request.Window.Start);
+        Assert.Equal(new DateOnly(2026, 12, 31), request.Window.End);
+    }
+
+    [Fact]
+    public async Task CreateAsync_UsesTheDefaultMonthlyWindow()
+    {
+        var (service, repository, _) = CreateService();
+
+        await service.CreateAsync("Brown Household");
+
+        var request = Assert.Single(repository.TotalRequests);
+        Assert.Equal(new DateOnly(2026, 10, 1), request.Window.Start);
+        Assert.Equal(new DateOnly(2026, 10, 31), request.Window.End);
+    }
+
+    [Fact]
+    public async Task ListForCurrentUserAsync_DerivesTheWindowFromTheInjectedClock()
+    {
+        var household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        var (service, repository, _) = CreateService(
+            household,
+            isMember: true,
+            now: new DateTimeOffset(2026, 2, 10, 23, 30, 0, TimeSpan.Zero));
+
+        await service.ListForCurrentUserAsync(Interval.Monthly);
+
+        var request = Assert.Single(repository.TotalRequests);
+        Assert.Equal(new DateOnly(2026, 2, 1), request.Window.Start);
+        Assert.Equal(new DateOnly(2026, 2, 28), request.Window.End);
+    }
+
+    [Fact]
     public void Constructor_RejectsNullDependencies()
     {
+        var timeProvider = new FixedTimeProvider(PinnedNow);
+
         Assert.Throws<ArgumentNullException>(
-            () => new HouseholdService(null!, new StubCurrentUserService()));
+            () => new HouseholdService(null!, new StubCurrentUserService(), timeProvider));
         Assert.Throws<ArgumentNullException>(
-            () => new HouseholdService(new FakeHouseholdRepository(), null!));
+            () => new HouseholdService(new FakeHouseholdRepository(), null!, timeProvider));
+        Assert.Throws<ArgumentNullException>(
+            () => new HouseholdService(new FakeHouseholdRepository(), new StubCurrentUserService(), null!));
     }
 
     private static (HouseholdService Service, FakeHouseholdRepository Repository, StubCurrentUserService CurrentUser)
-        CreateService(Household? household = null, bool isMember = false)
+        CreateService(Household? household = null, bool isMember = false, DateTimeOffset? now = null)
     {
         var repository = new FakeHouseholdRepository();
 
@@ -201,8 +261,9 @@ public class HouseholdServiceTests
         }
 
         var currentUser = new StubCurrentUserService();
+        var timeProvider = new FixedTimeProvider(now ?? PinnedNow);
 
-        return (new HouseholdService(repository, currentUser), repository, currentUser);
+        return (new HouseholdService(repository, currentUser, timeProvider), repository, currentUser);
     }
 
     private sealed class FakeHouseholdRepository : IHouseholdRepository
@@ -212,6 +273,8 @@ public class HouseholdServiceTests
         public List<UserHousehold> Memberships { get; } = new();
 
         public Dictionary<Guid, HouseholdTotals> Totals { get; } = new();
+
+        public List<(Guid HouseholdId, PeriodWindow Window)> TotalRequests { get; } = new();
 
         public bool MembershipAlwaysExists { get; set; }
 
@@ -257,9 +320,14 @@ public class HouseholdServiceTests
 
         public Task<HouseholdTotals> GetTotalsAsync(
             Guid householdId,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(
+            PeriodWindow window,
+            CancellationToken cancellationToken = default)
+        {
+            TotalRequests.Add((householdId, window));
+
+            return Task.FromResult(
                 Totals.TryGetValue(householdId, out var totals) ? totals : new HouseholdTotals(0d, 0d));
+        }
 
         public Task AddAsync(Household household, CancellationToken cancellationToken = default)
         {

@@ -1,3 +1,4 @@
+using HouseholdFinances.Domain.Entities;
 using HouseholdFinances.Domain.Models;
 
 namespace HouseholdFinances.Domain.Abstractions;
@@ -18,8 +19,10 @@ namespace HouseholdFinances.Domain.Abstractions;
 /// <para>
 /// <b>Totals.</b> <c>Incomes</c> and <c>Payments</c> are computed on read from the household's
 /// entries (the members' income entries and the household's bill entries) rather than stored
-/// authoritatively. Recurrence is not expanded in this version; that belongs to the Income and Bills
-/// domains.
+/// authoritatively. They are the sum of the discrete occurrences that fall inside the requested
+/// calendar window, using the approved recurrence rule: occurrences step from an entry's start date
+/// by its interval until its inclusive end date, and a one-off counts once when its start date is
+/// inside the window. The window is derived from <see cref="TimeProvider.GetUtcNow"/>.
 /// </para>
 /// </remarks>
 public interface IHouseholdService
@@ -39,28 +42,36 @@ public interface IHouseholdService
     Task<HouseholdDetail> CreateAsync(string? name, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Lists the current user's households, ordered by name, each with its computed totals. Empty
-    /// when the user has no membership.
+    /// Lists the current user's households, ordered by name, each with its totals for the
+    /// occurrences inside the calendar window for <paramref name="period"/>. Empty when the user has
+    /// no membership.
     /// </summary>
+    /// <param name="period">The calendar period whose window is totalled.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The current user's households.</returns>
     /// <exception cref="Errors.HouseholdFinancesException">
     /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>).
     /// </exception>
     Task<IReadOnlyList<HouseholdDetail>> ListForCurrentUserAsync(
+        Interval period,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Returns the household with the supplied identifier when the current user is a member of it.
+    /// Returns the household with the supplied identifier when the current user is a member of it,
+    /// with its totals for the occurrences inside the calendar window for <paramref name="period"/>.
     /// A household the user does not belong to is reported as not found, so the API never discloses
     /// the existence of another user's household.
     /// </summary>
     /// <param name="householdId">The household's identifier.</param>
+    /// <param name="period">The calendar period whose window is totalled.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>The household with its computed totals.</returns>
+    /// <returns>The household with its windowed totals.</returns>
     /// <exception cref="Errors.HouseholdFinancesException">
     /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>) or the user is
     /// not a member of the household (<see cref="Errors.ErrorCode.NotFound"/>).
     /// </exception>
-    Task<HouseholdDetail> GetByIdAsync(Guid householdId, CancellationToken cancellationToken = default);
+    Task<HouseholdDetail> GetByIdAsync(
+        Guid householdId,
+        Interval period,
+        CancellationToken cancellationToken = default);
 }
