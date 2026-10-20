@@ -151,6 +151,8 @@ public class HouseholdsApiTests
                 Id = Guid.NewGuid(),
                 Name = "Salary",
                 Value = 2250.50,
+                StartDate = new DateTime(2026, 10, 5),
+                EndDate = new DateTime(2026, 10, 31),
                 UserId = UserId
             });
             context.Bills.Add(new Bill
@@ -158,6 +160,8 @@ public class HouseholdsApiTests
                 Id = Guid.NewGuid(),
                 Name = "Rent",
                 Value = 1500.00,
+                StartDate = new DateTime(2026, 10, 5),
+                EndDate = new DateTime(2026, 10, 31),
                 HouseholdId = householdId,
                 UserId = UserId
             });
@@ -176,6 +180,99 @@ public class HouseholdsApiTests
         Assert.Equal("Brown Household", root.GetProperty("name").GetString());
         Assert.Equal(2250.50, root.GetProperty("incomes").GetDouble());
         Assert.Equal(1500.00, root.GetProperty("payments").GetDouble());
+    }
+
+    [Fact]
+    public async Task GetById_WithoutPeriod_TotalsTheCurrentMonthAsIfMonthlyWereSent()
+    {
+        using var factory = new Factory();
+
+        var householdId = Guid.NewGuid();
+        Seed(factory, context =>
+        {
+            context.Households.Add(new Household { Id = householdId, Name = "Test Household" });
+            context.UserHouseholds.Add(new UserHousehold
+            {
+                Id = Guid.NewGuid(),
+                UserId = UserId,
+                HouseholdId = householdId
+            });
+
+            // One occurrence inside the pinned month and one outside it. Only the first may count.
+            context.Incomes.Add(new Income
+            {
+                Id = Guid.NewGuid(),
+                Name = "In month",
+                Value = 100.00,
+                StartDate = new DateTime(2026, 10, 5),
+                EndDate = new DateTime(2026, 10, 31),
+                UserId = UserId
+            });
+            context.Incomes.Add(new Income
+            {
+                Id = Guid.NewGuid(),
+                Name = "Previous month",
+                Value = 999.00,
+                StartDate = new DateTime(2026, 9, 5),
+                EndDate = new DateTime(2026, 9, 30),
+                UserId = UserId
+            });
+        });
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        using var omitted = await client.GetAsync($"/api/v1/households/{householdId}");
+        using var explicitMonthly = await client.GetAsync($"/api/v1/households/{householdId}?period=Monthly");
+
+        Assert.Equal(HttpStatusCode.OK, omitted.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, explicitMonthly.StatusCode);
+
+        static double IncomesOf(string json) =>
+            JsonDocument.Parse(json).RootElement.GetProperty("incomes").GetDouble();
+
+        var omittedIncomes = IncomesOf(await omitted.Content.ReadAsStringAsync());
+        var monthlyIncomes = IncomesOf(await explicitMonthly.Content.ReadAsStringAsync());
+
+        // Omitting the parameter is the same request as asking for Monthly, and the out-of-window
+        // entry is excluded rather than added at face value.
+        Assert.Equal(100.00, omittedIncomes);
+        Assert.Equal(omittedIncomes, monthlyIncomes);
+    }
+
+    [Theory]
+    [InlineData("Fortnightly")]
+    [InlineData("3")]
+    [InlineData("-1")]
+    public async Task GetById_WithAnInvalidPeriod_ReturnsInvalidInputProblem(string period)
+    {
+        using var factory = new Factory();
+
+        var householdId = Guid.NewGuid();
+        Seed(factory, context =>
+        {
+            context.Households.Add(new Household { Id = householdId, Name = "Test Household" });
+            context.UserHouseholds.Add(new UserHousehold
+            {
+                Id = Guid.NewGuid(),
+                UserId = UserId,
+                HouseholdId = householdId
+            });
+        });
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        using var response = await client.GetAsync(
+            $"/api/v1/households/{householdId}?period={period}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+
+        // The failure uses the shared error convention and names the field, and a numeric value is
+        // rejected too: the wire format is the member name, so "3" must not silently mean Monthly.
+        Assert.Equal("InvalidInput", root.GetProperty("errorName").GetString());
+        Assert.Equal("Period", root.GetProperty("identifier").GetString());
     }
 
     [Fact]
@@ -238,6 +335,14 @@ public class HouseholdsApiTests
     /// </summary>
     public sealed class Factory : WebApplicationFactory<Program>
     {
+        /// <summary>
+        /// The instant every hosted test instance treats as now. Calendar windows are aligned to it,
+        /// so pinning it is what makes these tests deterministic: without a pinned clock the same
+        /// seeded entries would fall out of the window as the wall clock advanced, and the assertions
+        /// would silently change meaning.
+        /// </summary>
+        public static readonly DateTimeOffset Now = new(2026, 10, 14, 0, 0, 0, TimeSpan.Zero);
+
         private readonly string _databaseName = $"households-tests-{Guid.NewGuid()}";
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -267,6 +372,11 @@ public class HouseholdsApiTests
                     .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
                         TestAuthenticationHandler.SchemeName,
                         _ => { });
+
+                // The host registers TimeProvider.System. Replacing it keeps the production service
+                // shape while removing the wall-clock dependency from the window assertions.
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(new FixedTimeProvider(Now));
             });
         }
     }

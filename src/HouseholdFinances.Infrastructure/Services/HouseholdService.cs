@@ -8,7 +8,9 @@ namespace HouseholdFinances.Infrastructure.Services;
 /// <summary>
 /// Implements the Household operations for the current, authenticated user. The user is always
 /// resolved from <see cref="ICurrentUserService"/>, so a client can never target another user's
-/// household. Incomes and Payments are computed on read, never stored authoritatively.
+/// household. Incomes and Payments are computed on read as the sum of the entry occurrences inside
+/// a requested calendar window, and are never stored authoritatively. The clock comes from
+/// <see cref="TimeProvider"/>, which the tests pin.
 /// </summary>
 public sealed class HouseholdService : IHouseholdService
 {
@@ -28,14 +30,20 @@ public sealed class HouseholdService : IHouseholdService
 
     private readonly IHouseholdRepository _repository;
     private readonly ICurrentUserService _currentUserService;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>Creates the service.</summary>
     /// <param name="repository">Persistence access for the Household domain.</param>
     /// <param name="currentUserService">Resolves the authenticated user for the current request.</param>
-    public HouseholdService(IHouseholdRepository repository, ICurrentUserService currentUserService)
+    /// <param name="timeProvider">Supplies the UTC clock used to derive the calendar window.</param>
+    public HouseholdService(
+        IHouseholdRepository repository,
+        ICurrentUserService currentUserService,
+        TimeProvider timeProvider)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     /// <inheritdoc />
@@ -75,23 +83,32 @@ public sealed class HouseholdService : IHouseholdService
             cancellationToken);
         await _repository.SaveChangesAsync(cancellationToken);
 
-        var totals = await _repository.GetTotalsAsync(household.Id, cancellationToken);
+        // A new household has no entries. The default Monthly window keeps the read model shape
+        // consistent without adding a period parameter to the create flow.
+        var totals = await _repository.GetTotalsAsync(
+            household.Id,
+            CurrentWindow(Interval.Monthly),
+            cancellationToken);
 
         return ToDetail(household, totals);
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<HouseholdDetail>> ListForCurrentUserAsync(
+        Interval period,
         CancellationToken cancellationToken = default)
     {
         var userId = ResolveCurrentUserId();
+
+        // Resolve "now" once per request so every household in the list uses one window.
+        var window = CurrentWindow(period);
 
         var households = await _repository.GetByMemberAsync(userId, cancellationToken);
 
         var details = new List<HouseholdDetail>(households.Count);
         foreach (var household in households)
         {
-            var totals = await _repository.GetTotalsAsync(household.Id, cancellationToken);
+            var totals = await _repository.GetTotalsAsync(household.Id, window, cancellationToken);
             details.Add(ToDetail(household, totals));
         }
 
@@ -99,7 +116,10 @@ public sealed class HouseholdService : IHouseholdService
     }
 
     /// <inheritdoc />
-    public async Task<HouseholdDetail> GetByIdAsync(Guid householdId, CancellationToken cancellationToken = default)
+    public async Task<HouseholdDetail> GetByIdAsync(
+        Guid householdId,
+        Interval period,
+        CancellationToken cancellationToken = default)
     {
         var userId = ResolveCurrentUserId();
 
@@ -108,10 +128,16 @@ public sealed class HouseholdService : IHouseholdService
         var household = await _repository.GetForMemberAsync(householdId, userId, cancellationToken)
             ?? throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
 
-        var totals = await _repository.GetTotalsAsync(householdId, cancellationToken);
+        var totals = await _repository.GetTotalsAsync(
+            householdId,
+            CurrentWindow(period),
+            cancellationToken);
 
         return ToDetail(household, totals);
     }
+
+    private PeriodWindow CurrentWindow(Interval period) =>
+        PeriodWindow.For(period, DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime));
 
     private static HouseholdDetail ToDetail(Household household, HouseholdTotals totals) =>
         new(household.Id, household.Name, RoundMoney(totals.Incomes), RoundMoney(totals.Payments));

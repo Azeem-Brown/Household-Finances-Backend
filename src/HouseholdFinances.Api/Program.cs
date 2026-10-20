@@ -23,6 +23,10 @@ builder.Services.AddOpenApi(OpenApiConventions.Configure);
 // configuration (appsettings placeholder, user secrets, or environment variables).
 builder.Services.AddHouseholdFinancesDbContext(builder.Configuration);
 
+// "Now" for calendar windows comes from the injected clock, never from DateTime.UtcNow or
+// DateTime.Today directly. Tests replace this registration with a pinned provider.
+builder.Services.AddSingleton(TimeProvider.System);
+
 // Household domain repository and service implementations (Infrastructure).
 builder.Services.AddHouseholdFinancesHouseholdDomain();
 // User domain repository and service implementations (Infrastructure).

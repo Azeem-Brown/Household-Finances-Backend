@@ -59,8 +59,16 @@ public sealed class HouseholdRepository : IHouseholdRepository
     /// <inheritdoc />
     public async Task<HouseholdTotals> GetTotalsAsync(
         Guid householdId,
+        PeriodWindow window,
         CancellationToken cancellationToken = default)
     {
+        // Derive DateTime bounds from the DateOnly window so the query needs no provider-specific
+        // DateOnly translation. The window bounds are inclusive, and the candidate filter uses
+        // half-open reasoning: an entry can overlap the window when it starts on or before the
+        // window's last day and ends on or after the window's first day.
+        var windowStart = window.Start.ToDateTime(TimeOnly.MinValue);
+        var windowEnd = window.End.ToDateTime(TimeOnly.MaxValue);
+
         // Income has no household key, so the household's membership defines which incomes belong to
         // it. A Contains subquery over the member ids avoids double counting when a member has more
         // than one row (the unique membership index prevents that in any case).
@@ -69,18 +77,48 @@ public sealed class HouseholdRepository : IHouseholdRepository
             .Select(membership => membership.UserId);
 
         var incomes = await _context.Incomes
-            .Where(income => memberIds.Contains(income.UserId))
-            .Select(income => (double?)income.Value)
-            .SumAsync(cancellationToken) ?? 0d;
+            .Where(income => memberIds.Contains(income.UserId)
+                && income.StartDate <= windowEnd
+                && income.EndDate >= windowStart)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
 
         // Bills carry the household key directly.
-        var payments = await _context.Bills
-            .Where(bill => bill.HouseholdId == householdId)
-            .Select(bill => (double?)bill.Value)
-            .SumAsync(cancellationToken) ?? 0d;
+        var bills = await _context.Bills
+            .Where(bill => bill.HouseholdId == householdId
+                && bill.StartDate <= windowEnd
+                && bill.EndDate >= windowStart)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
 
-        return new HouseholdTotals(incomes, payments);
+        return new HouseholdTotals(
+            SumIncomeOccurrences(incomes, window),
+            SumBillOccurrences(bills, window));
     }
+
+    private static double SumIncomeOccurrences(IEnumerable<Income> entries, PeriodWindow window) =>
+        entries.Sum(entry => entry.Value * CountOccurrences(
+            entry.StartDate,
+            entry.EndDate,
+            entry.Recurring,
+            entry.Interval,
+            window));
+
+    private static double SumBillOccurrences(IEnumerable<Bill> entries, PeriodWindow window) =>
+        entries.Sum(entry => entry.Value * CountOccurrences(
+            entry.StartDate,
+            entry.EndDate,
+            entry.Recurring,
+            entry.Interval,
+            window));
+
+    private static int CountOccurrences(
+        DateTime startDate,
+        DateTime endDate,
+        bool recurring,
+        Interval? interval,
+        PeriodWindow window) =>
+        OccurrenceExpander.Expand(startDate, endDate, recurring, interval, window).Count;
 
     /// <inheritdoc />
     public Task AddAsync(Household household, CancellationToken cancellationToken = default)

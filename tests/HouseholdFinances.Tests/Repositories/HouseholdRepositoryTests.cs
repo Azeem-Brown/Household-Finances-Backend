@@ -1,4 +1,5 @@
 using HouseholdFinances.Domain.Entities;
+using HouseholdFinances.Domain.Models;
 using HouseholdFinances.Infrastructure.Persistence;
 using HouseholdFinances.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,11 @@ public class HouseholdRepositoryTests
 {
     private static readonly Guid UserId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid OtherUserId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+
+    // The shared fixture date is a Wednesday, so the current week starts on 2026-10-12.
+    private static readonly DateOnly FixtureToday = new(2026, 10, 14);
+
+    private static PeriodWindow WindowFor(Interval period) => PeriodWindow.For(period, FixtureToday);
 
     [Fact]
     public async Task GetForMemberAsync_ReturnsTheHouseholdForAMember()
@@ -112,17 +118,64 @@ public class HouseholdRepositoryTests
             new UserHousehold { Id = Guid.NewGuid(), UserId = UserId, HouseholdId = householdId },
             new UserHousehold { Id = Guid.NewGuid(), UserId = OtherUserId, HouseholdId = otherHouseholdId });
         context.Incomes.AddRange(
-            new Income { Id = Guid.NewGuid(), Name = "Salary", Value = 2000.00, UserId = UserId },
-            new Income { Id = Guid.NewGuid(), Name = "Side work", Value = 250.50, UserId = UserId },
-            new Income { Id = Guid.NewGuid(), Name = "Other salary", Value = 9999.00, UserId = OtherUserId });
+            new Income
+            {
+                Id = Guid.NewGuid(),
+                Name = "Salary",
+                Value = 2000.00,
+                StartDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                EndDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                Recurring = false,
+                UserId = UserId
+            },
+            new Income
+            {
+                Id = Guid.NewGuid(),
+                Name = "Side work",
+                Value = 250.50,
+                StartDate = new DateTime(2026, 6, 15, 0, 0, 0, DateTimeKind.Utc),
+                EndDate = new DateTime(2026, 6, 15, 0, 0, 0, DateTimeKind.Utc),
+                Recurring = false,
+                UserId = UserId
+            },
+            new Income
+            {
+                Id = Guid.NewGuid(),
+                Name = "Other salary",
+                Value = 9999.00,
+                StartDate = new DateTime(2026, 6, 15, 0, 0, 0, DateTimeKind.Utc),
+                EndDate = new DateTime(2026, 6, 15, 0, 0, 0, DateTimeKind.Utc),
+                Recurring = false,
+                UserId = OtherUserId
+            });
         context.Bills.AddRange(
-            new Bill { Id = Guid.NewGuid(), Name = "Rent", Value = 1500.00, HouseholdId = householdId, UserId = UserId },
-            new Bill { Id = Guid.NewGuid(), Name = "Other rent", Value = 800.00, HouseholdId = otherHouseholdId, UserId = OtherUserId });
+            new Bill
+            {
+                Id = Guid.NewGuid(),
+                Name = "Rent",
+                Value = 1500.00,
+                StartDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                EndDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                Recurring = false,
+                HouseholdId = householdId,
+                UserId = UserId
+            },
+            new Bill
+            {
+                Id = Guid.NewGuid(),
+                Name = "Other rent",
+                Value = 800.00,
+                StartDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                EndDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                Recurring = false,
+                HouseholdId = otherHouseholdId,
+                UserId = OtherUserId
+            });
         await context.SaveChangesAsync();
 
         var repository = new HouseholdRepository(context);
 
-        var totals = await repository.GetTotalsAsync(householdId);
+        var totals = await repository.GetTotalsAsync(householdId, WindowFor(Interval.Yearly));
 
         Assert.Equal(2250.50, totals.Incomes);
         Assert.Equal(1500.00, totals.Payments);
@@ -134,10 +187,196 @@ public class HouseholdRepositoryTests
         await using var context = CreateContext(nameof(GetTotalsAsync_ReturnsZeroWhenThereAreNoEntries));
         var repository = new HouseholdRepository(context);
 
-        var totals = await repository.GetTotalsAsync(Guid.NewGuid());
+        var totals = await repository.GetTotalsAsync(Guid.NewGuid(), WindowFor(Interval.Monthly));
 
         Assert.Equal(0d, totals.Incomes);
         Assert.Equal(0d, totals.Payments);
+    }
+
+    [Theory]
+    [InlineData(Interval.Daily, 0d)]
+    [InlineData(Interval.Weekly, 100d)]
+    [InlineData(Interval.BiWeekly, 300d)]
+    [InlineData(Interval.Monthly, 400d)]
+    [InlineData(Interval.Quarterly, 1200d)]
+    [InlineData(Interval.Yearly, 5120d)]
+    public async Task GetTotalsAsync_ReturnsExpectedTotalsForMixedCadenceEntriesInEachWindow(
+        Interval period,
+        double expected)
+    {
+        await using var context = CreateContext($"mixed-cadence-{period}");
+        var householdId = Guid.NewGuid();
+        SeedEntries(context, householdId, SharedFixture());
+        await context.SaveChangesAsync();
+
+        var repository = new HouseholdRepository(context);
+
+        var totals = await repository.GetTotalsAsync(householdId, WindowFor(period));
+
+        Assert.Equal(expected, totals.Payments);
+        Assert.Equal(expected, totals.Incomes);
+    }
+
+    [Theory]
+    [InlineData(Interval.Monthly, 450d)]
+    [InlineData(Interval.Quarterly, 1250d)]
+    [InlineData(Interval.Yearly, 5620d)]
+    public async Task GetTotalsAsync_StopsRecurringSeriesAtItsEndDate(Interval period, double expected)
+    {
+        await using var context = CreateContext($"end-date-{period}");
+        var householdId = Guid.NewGuid();
+        SeedEntries(
+            context,
+            householdId,
+            SharedFixture()
+                .Append(new EntrySpec(
+                    50d,
+                    Utc(2026, 1, 20),
+                    Utc(2026, 10, 20),
+                    Recurring: true,
+                    Interval.Monthly))
+                .ToArray());
+        await context.SaveChangesAsync();
+
+        var repository = new HouseholdRepository(context);
+
+        var totals = await repository.GetTotalsAsync(householdId, WindowFor(period));
+
+        // The series' 2026-10-20 occurrence is on EndDate and therefore counts; its November and
+        // December occurrences do not exist.
+        Assert.Equal(expected, totals.Payments);
+    }
+
+    [Theory]
+    [InlineData(Interval.Daily, 500d)]
+    [InlineData(Interval.Weekly, 600d)]
+    [InlineData(Interval.Monthly, 900d)]
+    public async Task GetTotalsAsync_CountsAOneOffOnceInEveryWindowContainingItsStartDate(
+        Interval period,
+        double expected)
+    {
+        await using var context = CreateContext($"one-off-{period}");
+        var householdId = Guid.NewGuid();
+        SeedEntries(
+            context,
+            householdId,
+            SharedFixture()
+                .Append(new EntrySpec(
+                    500d,
+                    Utc(2026, 10, 14),
+                    Utc(2026, 10, 14),
+                    Recurring: false,
+                    Interval: null))
+                .ToArray());
+        await context.SaveChangesAsync();
+
+        var repository = new HouseholdRepository(context);
+
+        var totals = await repository.GetTotalsAsync(householdId, WindowFor(period));
+
+        Assert.Equal(expected, totals.Payments);
+    }
+
+    [Fact]
+    public async Task GetTotalsAsync_TreatsRecurringEntryWithoutAnIntervalAsAOneOff()
+    {
+        await using var context = CreateContext(nameof(GetTotalsAsync_TreatsRecurringEntryWithoutAnIntervalAsAOneOff));
+        var householdId = Guid.NewGuid();
+        SeedEntries(
+            context,
+            householdId,
+            new EntrySpec(
+                30d,
+                Utc(2026, 10, 14),
+                Utc(2026, 10, 14),
+                Recurring: true,
+                Interval: null));
+        await context.SaveChangesAsync();
+
+        var repository = new HouseholdRepository(context);
+
+        var totals = await repository.GetTotalsAsync(householdId, WindowFor(Interval.Daily));
+
+        Assert.Equal(30d, totals.Payments);
+        Assert.Equal(30d, totals.Incomes);
+    }
+
+    [Theory]
+    [InlineData(Interval.Daily, 40d)]
+    [InlineData(Interval.Monthly, 40d)]
+    [InlineData(Interval.Quarterly, 40d)]
+    [InlineData(Interval.Yearly, 40d)]
+    public async Task GetTotalsAsync_TreatsNonRecurringEntryWithAnIntervalAsAOneOff(
+        Interval period,
+        double expected)
+    {
+        await using var context = CreateContext($"non-recurring-{period}");
+        var householdId = Guid.NewGuid();
+        SeedEntries(
+            context,
+            householdId,
+            new EntrySpec(
+                40d,
+                Utc(2026, 10, 14),
+                Utc(2026, 12, 31),
+                Recurring: false,
+                Interval.Monthly));
+        await context.SaveChangesAsync();
+
+        var repository = new HouseholdRepository(context);
+
+        var totals = await repository.GetTotalsAsync(householdId, WindowFor(period));
+
+        // It counts once on its StartDate, not at the cadence its unused interval names.
+        Assert.Equal(expected, totals.Payments);
+    }
+
+    [Fact]
+    public async Task GetTotalsAsync_IgnoresAnEntryWhoseEndDatePrecedesItsStartDate()
+    {
+        await using var context = CreateContext(nameof(GetTotalsAsync_IgnoresAnEntryWhoseEndDatePrecedesItsStartDate));
+        var householdId = Guid.NewGuid();
+        SeedEntries(
+            context,
+            householdId,
+            new EntrySpec(
+                70d,
+                Utc(2026, 10, 14),
+                Utc(2026, 10, 13),
+                Recurring: true,
+                Interval.Monthly));
+        await context.SaveChangesAsync();
+
+        var repository = new HouseholdRepository(context);
+
+        var totals = await repository.GetTotalsAsync(householdId, WindowFor(Interval.Monthly));
+
+        Assert.Equal(0d, totals.Payments);
+        Assert.Equal(0d, totals.Incomes);
+    }
+
+    [Fact]
+    public async Task GetTotalsAsync_IgnoresEntriesEntirelyOutsideTheWindow()
+    {
+        await using var context = CreateContext(nameof(GetTotalsAsync_IgnoresEntriesEntirelyOutsideTheWindow));
+        var householdId = Guid.NewGuid();
+        SeedEntries(
+            context,
+            householdId,
+            new EntrySpec(
+                90d,
+                Utc(2025, 1, 1),
+                Utc(2025, 12, 31),
+                Recurring: true,
+                Interval.Monthly));
+        await context.SaveChangesAsync();
+
+        var repository = new HouseholdRepository(context);
+
+        var totals = await repository.GetTotalsAsync(householdId, WindowFor(Interval.Yearly));
+
+        Assert.Equal(0d, totals.Payments);
+        Assert.Equal(0d, totals.Incomes);
     }
 
     [Fact]
@@ -181,6 +420,66 @@ public class HouseholdRepositoryTests
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => repository.AddAsync(null!));
     }
+
+    // The shared fixture from issue #36: B1, B2, and B3. The same rows are seeded as both bills and
+    // incomes so the mixed-cadence rule is covered for both categories.
+    private static EntrySpec[] SharedFixture() => new[]
+    {
+        new EntrySpec(100d, Utc(2026, 1, 5), Utc(2026, 12, 31), Recurring: true, Interval.BiWeekly),
+        new EntrySpec(200d, Utc(2026, 1, 20), Utc(2026, 12, 31), Recurring: true, Interval.Monthly),
+        new EntrySpec(120d, Utc(2026, 2, 1), Utc(2026, 12, 31), Recurring: true, Interval.Yearly)
+    };
+
+    private static void SeedEntries(
+        HouseholdFinancesDbContext context,
+        Guid householdId,
+        params EntrySpec[] entries)
+    {
+        context.Households.Add(new Household { Id = householdId, Name = "Brown Household" });
+        context.UserHouseholds.Add(new UserHousehold
+        {
+            Id = Guid.NewGuid(),
+            UserId = UserId,
+            HouseholdId = householdId
+        });
+
+        foreach (var entry in entries)
+        {
+            context.Bills.Add(new Bill
+            {
+                Id = Guid.NewGuid(),
+                Name = "Bill",
+                Value = entry.Value,
+                StartDate = entry.StartDate,
+                EndDate = entry.EndDate,
+                Recurring = entry.Recurring,
+                Interval = entry.Interval,
+                HouseholdId = householdId,
+                UserId = UserId
+            });
+            context.Incomes.Add(new Income
+            {
+                Id = Guid.NewGuid(),
+                Name = "Income",
+                Value = entry.Value,
+                StartDate = entry.StartDate,
+                EndDate = entry.EndDate,
+                Recurring = entry.Recurring,
+                Interval = entry.Interval,
+                UserId = UserId
+            });
+        }
+    }
+
+    private static DateTime Utc(int year, int month, int day) =>
+        new(year, month, day, 0, 0, 0, DateTimeKind.Utc);
+
+    private sealed record EntrySpec(
+        double Value,
+        DateTime StartDate,
+        DateTime EndDate,
+        bool Recurring,
+        Interval? Interval);
 
     private static HouseholdFinancesDbContext CreateContext(string databaseName) =>
         new(new DbContextOptionsBuilder<HouseholdFinancesDbContext>()
