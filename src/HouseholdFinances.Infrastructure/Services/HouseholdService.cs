@@ -10,7 +10,9 @@ namespace HouseholdFinances.Infrastructure.Services;
 /// resolved from <see cref="ICurrentUserService"/>, so a client can never target another user's
 /// household. Incomes and Payments are computed on read as the sum of the entry occurrences inside
 /// a requested calendar window, and are never stored authoritatively. The clock comes from
-/// <see cref="TimeProvider"/>, which the tests pin.
+/// <see cref="TimeProvider"/>, which the tests pin. The entry counts are the number of stored
+/// entries and deliberately ignore the window, so a household whose entries fall outside the
+/// requested period still reports that it has entries.
 /// </summary>
 public sealed class HouseholdService : IHouseholdService
 {
@@ -89,8 +91,9 @@ public sealed class HouseholdService : IHouseholdService
             household.Id,
             CurrentWindow(Interval.Monthly),
             cancellationToken);
+        var entryCounts = await _repository.GetEntryCountsAsync(household.Id, cancellationToken);
 
-        return ToDetail(household, totals);
+        return ToDetail(household, totals, entryCounts);
     }
 
     /// <inheritdoc />
@@ -109,7 +112,8 @@ public sealed class HouseholdService : IHouseholdService
         foreach (var household in households)
         {
             var totals = await _repository.GetTotalsAsync(household.Id, window, cancellationToken);
-            details.Add(ToDetail(household, totals));
+            var entryCounts = await _repository.GetEntryCountsAsync(household.Id, cancellationToken);
+            details.Add(ToDetail(household, totals, entryCounts));
         }
 
         return details;
@@ -133,14 +137,27 @@ public sealed class HouseholdService : IHouseholdService
             CurrentWindow(period),
             cancellationToken);
 
-        return ToDetail(household, totals);
+        // Deliberately read without the window: the counts describe the household's entries, not
+        // the occurrences inside the requested period.
+        var entryCounts = await _repository.GetEntryCountsAsync(householdId, cancellationToken);
+
+        return ToDetail(household, totals, entryCounts);
     }
 
     private PeriodWindow CurrentWindow(Interval period) =>
         PeriodWindow.For(period, DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime));
 
-    private static HouseholdDetail ToDetail(Household household, HouseholdTotals totals) =>
-        new(household.Id, household.Name, RoundMoney(totals.Incomes), RoundMoney(totals.Payments));
+    private static HouseholdDetail ToDetail(
+        Household household,
+        HouseholdTotals totals,
+        HouseholdEntryCounts entryCounts) =>
+        new(
+            household.Id,
+            household.Name,
+            RoundMoney(totals.Incomes),
+            RoundMoney(totals.Payments),
+            entryCounts.Incomes,
+            entryCounts.Bills);
 
     // Money is USD with two decimal places, half-up (recorded decision).
     private static double RoundMoney(double value) =>

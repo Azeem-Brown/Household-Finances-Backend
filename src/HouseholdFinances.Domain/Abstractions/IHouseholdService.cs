@@ -24,6 +24,12 @@ namespace HouseholdFinances.Domain.Abstractions;
 /// by its interval until its inclusive end date, and a one-off counts once when its start date is
 /// inside the window. The window is derived from <see cref="TimeProvider.GetUtcNow"/>.
 /// </para>
+/// <para>
+/// <b>Entry counts.</b> <c>IncomeEntryCount</c> and <c>BillEntryCount</c> are the number of stored
+/// entries and are independent of the requested period: they are never expanded or filtered by a
+/// calendar window, so a household with entries outside the selected period still reports non-zero
+/// counts while its totals are zero.
+/// </para>
 /// </remarks>
 public interface IHouseholdService
 {

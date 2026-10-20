@@ -46,6 +46,8 @@ public class HouseholdsApiTests
         Assert.Equal("Brown Household", root.GetProperty("name").GetString());
         Assert.Equal(0d, root.GetProperty("incomes").GetDouble());
         Assert.Equal(0d, root.GetProperty("payments").GetDouble());
+        Assert.Equal(0, root.GetProperty("incomeEntryCount").GetInt32());
+        Assert.Equal(0, root.GetProperty("billEntryCount").GetInt32());
         Assert.Equal($"/api/v1/households/{id}", response.Headers.Location?.AbsolutePath);
 
         var membership = Query(factory, context => context.UserHouseholds
@@ -299,12 +301,225 @@ public class HouseholdsApiTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
 
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
 
         Assert.Equal(1, root.GetProperty("errorCode").GetInt32());
         Assert.Equal("NotFound", root.GetProperty("errorName").GetString());
         Assert.Equal(householdId.ToString(), root.GetProperty("identifier").GetString());
+
+        // Counts are part of the household read model, so a non-member must not see them either.
+        Assert.DoesNotContain("incomeEntryCount", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("billEntryCount", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetById_ReportsEntryCountsThatDoNotDependOnThePeriod()
+    {
+        using var factory = new Factory();
+
+        var householdId = Guid.NewGuid();
+        Seed(factory, context =>
+        {
+            context.Households.Add(new Household { Id = householdId, Name = "Test Household" });
+            context.UserHouseholds.Add(new UserHousehold
+            {
+                Id = Guid.NewGuid(),
+                UserId = UserId,
+                HouseholdId = householdId
+            });
+
+            // Every entry is dated 2025, so none can produce an occurrence in the pinned 2026
+            // windows. The totals are therefore zero for every period while the counts are not.
+            context.Incomes.AddRange(
+                new Income
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Old salary",
+                    Value = 1000.00,
+                    StartDate = new DateTime(2025, 1, 1),
+                    EndDate = new DateTime(2025, 12, 31),
+                    Recurring = true,
+                    Interval = Interval.Monthly,
+                    UserId = UserId
+                },
+                new Income
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Old bonus",
+                    Value = 500.00,
+                    StartDate = new DateTime(2025, 6, 1),
+                    EndDate = new DateTime(2025, 6, 1),
+                    UserId = UserId
+                });
+            context.Bills.AddRange(
+                new Bill
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Old rent",
+                    Value = 900.00,
+                    StartDate = new DateTime(2025, 1, 1),
+                    EndDate = new DateTime(2025, 12, 31),
+                    Recurring = true,
+                    Interval = Interval.Monthly,
+                    HouseholdId = householdId,
+                    UserId = UserId
+                },
+                new Bill
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Old insurance",
+                    Value = 120.00,
+                    StartDate = new DateTime(2025, 7, 1),
+                    EndDate = new DateTime(2025, 7, 1),
+                    HouseholdId = householdId,
+                    UserId = UserId
+                });
+        });
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        using var daily = await client.GetAsync($"/api/v1/households/{householdId}?period=Daily");
+        using var yearly = await client.GetAsync($"/api/v1/households/{householdId}?period=Yearly");
+
+        Assert.Equal(HttpStatusCode.OK, daily.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, yearly.StatusCode);
+
+        using var dailyDocument = JsonDocument.Parse(await daily.Content.ReadAsStringAsync());
+        using var yearlyDocument = JsonDocument.Parse(await yearly.Content.ReadAsStringAsync());
+        var dailyRoot = dailyDocument.RootElement;
+        var yearlyRoot = yearlyDocument.RootElement;
+
+        // This is the case the windowed totals cannot express: totals zero, entries present.
+        Assert.Equal(0d, dailyRoot.GetProperty("incomes").GetDouble());
+        Assert.Equal(0d, dailyRoot.GetProperty("payments").GetDouble());
+        Assert.Equal(0d, yearlyRoot.GetProperty("incomes").GetDouble());
+        Assert.Equal(0d, yearlyRoot.GetProperty("payments").GetDouble());
+
+        Assert.Equal(2, dailyRoot.GetProperty("incomeEntryCount").GetInt32());
+        Assert.Equal(2, dailyRoot.GetProperty("billEntryCount").GetInt32());
+        Assert.Equal(
+            dailyRoot.GetProperty("incomeEntryCount").GetInt32(),
+            yearlyRoot.GetProperty("incomeEntryCount").GetInt32());
+        Assert.Equal(
+            dailyRoot.GetProperty("billEntryCount").GetInt32(),
+            yearlyRoot.GetProperty("billEntryCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task List_AndGetById_AgreeOnTheEntryCounts()
+    {
+        using var factory = new Factory();
+
+        var householdId = Guid.NewGuid();
+        Seed(factory, context =>
+        {
+            context.Households.Add(new Household { Id = householdId, Name = "Test Household" });
+            context.UserHouseholds.Add(new UserHousehold
+            {
+                Id = Guid.NewGuid(),
+                UserId = UserId,
+                HouseholdId = householdId
+            });
+            context.Incomes.AddRange(
+                new Income
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Old salary",
+                    Value = 1000.00,
+                    StartDate = new DateTime(2025, 1, 1),
+                    EndDate = new DateTime(2025, 12, 31),
+                    Recurring = true,
+                    Interval = Interval.Monthly,
+                    UserId = UserId
+                });
+            context.Bills.AddRange(
+                new Bill
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Old rent",
+                    Value = 900.00,
+                    StartDate = new DateTime(2025, 1, 1),
+                    EndDate = new DateTime(2025, 12, 31),
+                    HouseholdId = householdId,
+                    UserId = UserId
+                },
+                new Bill
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Old insurance",
+                    Value = 120.00,
+                    StartDate = new DateTime(2025, 7, 1),
+                    EndDate = new DateTime(2025, 7, 1),
+                    HouseholdId = householdId,
+                    UserId = UserId
+                },
+                new Bill
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Old subscription",
+                    Value = 15.00,
+                    StartDate = new DateTime(2025, 2, 1),
+                    EndDate = new DateTime(2025, 2, 1),
+                    HouseholdId = householdId,
+                    UserId = UserId
+                });
+        });
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        using var list = await client.GetAsync("/api/v1/households?period=Daily");
+        using var byId = await client.GetAsync($"/api/v1/households/{householdId}?period=Yearly");
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, byId.StatusCode);
+
+        using var listDocument = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        using var byIdDocument = JsonDocument.Parse(await byId.Content.ReadAsStringAsync());
+        var listItem = Assert.Single(listDocument.RootElement.EnumerateArray().ToList());
+        var byIdRoot = byIdDocument.RootElement;
+
+        Assert.Equal(1, listItem.GetProperty("incomeEntryCount").GetInt32());
+        Assert.Equal(3, listItem.GetProperty("billEntryCount").GetInt32());
+        Assert.Equal(
+            listItem.GetProperty("incomeEntryCount").GetInt32(),
+            byIdRoot.GetProperty("incomeEntryCount").GetInt32());
+        Assert.Equal(
+            listItem.GetProperty("billEntryCount").GetInt32(),
+            byIdRoot.GetProperty("billEntryCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task List_ReportsZeroEntryCountsForAHouseholdWithNoEntries()
+    {
+        using var factory = new Factory();
+
+        var householdId = Guid.NewGuid();
+        Seed(factory, context =>
+        {
+            context.Households.Add(new Household { Id = householdId, Name = "Test Household" });
+            context.UserHouseholds.Add(new UserHousehold
+            {
+                Id = Guid.NewGuid(),
+                UserId = UserId,
+                HouseholdId = householdId
+            });
+        });
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        using var response = await client.GetAsync("/api/v1/households?period=Yearly");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(document.RootElement.EnumerateArray().ToList());
+
+        Assert.Equal(0d, item.GetProperty("incomes").GetDouble());
+        Assert.Equal(0d, item.GetProperty("payments").GetDouble());
+        Assert.Equal(0, item.GetProperty("incomeEntryCount").GetInt32());
+        Assert.Equal(0, item.GetProperty("billEntryCount").GetInt32());
     }
 
     private static HttpClient CreateAuthenticatedClient(Factory factory, Guid userId)

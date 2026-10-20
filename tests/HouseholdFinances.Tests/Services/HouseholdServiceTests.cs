@@ -27,6 +27,8 @@ public class HouseholdServiceTests
         Assert.Equal("Brown Household", detail.Name);
         Assert.Equal(0d, detail.Incomes);
         Assert.Equal(0d, detail.Payments);
+        Assert.Equal(0, detail.IncomeEntryCount);
+        Assert.Equal(0, detail.BillEntryCount);
 
         var household = Assert.Single(repository.Households);
         Assert.Equal(detail.Id, household.Id);
@@ -137,7 +139,7 @@ public class HouseholdServiceTests
     public async Task GetByIdAsync_ThrowsNotFoundForANonMemberOrUnknownHousehold()
     {
         var household = new Household { Id = HouseholdId, Name = "Brown Household" };
-        var (service, _, _) = CreateService(household, isMember: false);
+        var (service, repository, _) = CreateService(household, isMember: false);
 
         var exception = await Assert.ThrowsAsync<HouseholdFinancesException>(
             () => service.GetByIdAsync(HouseholdId, Interval.Monthly));
@@ -145,6 +147,10 @@ public class HouseholdServiceTests
         Assert.Equal(ErrorCode.NotFound, exception.ErrorCode);
         Assert.Equal(HouseholdId, exception.Identifier);
         Assert.Equal($"NotFound {HouseholdId}", exception.Message);
+
+        // The count reads are never reached, so nothing about the household's entries can leak to a
+        // caller who is not a member.
+        Assert.Empty(repository.EntryCountRequests);
     }
 
     [Fact]
@@ -170,6 +176,57 @@ public class HouseholdServiceTests
 
         Assert.Equal(ErrorCode.Unauthorized, exception.ErrorCode);
         Assert.Equal(HouseholdService.CurrentUserIdentifier, exception.Identifier);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ReturnsEntryCountsThatDoNotDependOnThePeriod()
+    {
+        var household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        var (service, repository, _) = CreateService(household, isMember: true);
+
+        // The entries exist but produce no occurrences in either window, so both periods total
+        // zero while the counts stay non-zero. That is the distinction this change adds.
+        repository.Totals[HouseholdId] = new HouseholdTotals(0d, 0d);
+        repository.EntryCounts[HouseholdId] = new HouseholdEntryCounts(2, 3);
+
+        var daily = await service.GetByIdAsync(HouseholdId, Interval.Daily);
+        var yearly = await service.GetByIdAsync(HouseholdId, Interval.Yearly);
+
+        Assert.Equal(0d, daily.Incomes);
+        Assert.Equal(0d, daily.Payments);
+        Assert.Equal(2, daily.IncomeEntryCount);
+        Assert.Equal(3, daily.BillEntryCount);
+        Assert.Equal(daily.IncomeEntryCount, yearly.IncomeEntryCount);
+        Assert.Equal(daily.BillEntryCount, yearly.BillEntryCount);
+
+        // Both reads did happen, and they asked for genuinely different windows, so equal counts
+        // are not an artefact of the periods collapsing to the same request.
+        Assert.Equal(2, repository.TotalRequests.Count);
+        Assert.NotEqual(
+            repository.TotalRequests[0].Window.Start,
+            repository.TotalRequests[1].Window.Start);
+        Assert.Equal(new[] { HouseholdId, HouseholdId }, repository.EntryCountRequests);
+    }
+
+    [Fact]
+    public async Task ListForCurrentUserAsync_ReturnsTheEntryCountsForEachHousehold()
+    {
+        var first = new Household { Id = Guid.NewGuid(), Name = "Alpha Household" };
+        var second = new Household { Id = Guid.NewGuid(), Name = "Zeta Household" };
+        var (service, repository, _) = CreateService();
+        repository.Households.AddRange(first, second);
+        repository.Memberships.AddRange(
+            new UserHousehold { Id = Guid.NewGuid(), UserId = UserId, HouseholdId = first.Id },
+            new UserHousehold { Id = Guid.NewGuid(), UserId = UserId, HouseholdId = second.Id });
+        repository.EntryCounts[first.Id] = new HouseholdEntryCounts(4, 5);
+
+        var details = await service.ListForCurrentUserAsync(Interval.Daily);
+
+        Assert.Equal(4, details[0].IncomeEntryCount);
+        Assert.Equal(5, details[0].BillEntryCount);
+        Assert.Equal(0, details[1].IncomeEntryCount);
+        Assert.Equal(0, details[1].BillEntryCount);
+        Assert.Equal(new[] { first.Id, second.Id }, repository.EntryCountRequests);
     }
 
     [Fact]
@@ -274,7 +331,11 @@ public class HouseholdServiceTests
 
         public Dictionary<Guid, HouseholdTotals> Totals { get; } = new();
 
+        public Dictionary<Guid, HouseholdEntryCounts> EntryCounts { get; } = new();
+
         public List<(Guid HouseholdId, PeriodWindow Window)> TotalRequests { get; } = new();
+
+        public List<Guid> EntryCountRequests { get; } = new();
 
         public bool MembershipAlwaysExists { get; set; }
 
@@ -327,6 +388,18 @@ public class HouseholdServiceTests
 
             return Task.FromResult(
                 Totals.TryGetValue(householdId, out var totals) ? totals : new HouseholdTotals(0d, 0d));
+        }
+
+        public Task<HouseholdEntryCounts> GetEntryCountsAsync(
+            Guid householdId,
+            CancellationToken cancellationToken = default)
+        {
+            EntryCountRequests.Add(householdId);
+
+            return Task.FromResult(
+                EntryCounts.TryGetValue(householdId, out var counts)
+                    ? counts
+                    : new HouseholdEntryCounts(0, 0));
         }
 
         public Task AddAsync(Household household, CancellationToken cancellationToken = default)

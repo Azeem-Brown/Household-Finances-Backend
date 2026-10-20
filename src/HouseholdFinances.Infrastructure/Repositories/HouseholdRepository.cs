@@ -96,6 +96,28 @@ public sealed class HouseholdRepository : IHouseholdRepository
             SumBillOccurrences(bills, window));
     }
 
+    /// <inheritdoc />
+    public async Task<HouseholdEntryCounts> GetEntryCountsAsync(
+        Guid householdId,
+        CancellationToken cancellationToken = default)
+    {
+        // Counts are stored entries, so there is no date filter and no occurrence expansion. As in
+        // GetTotalsAsync, income rows have no household key, so the household's membership defines
+        // which incomes belong to it. Both counts are aggregated in the store rather than by
+        // materialising the rows.
+        var memberIds = _context.UserHouseholds
+            .Where(membership => membership.HouseholdId == householdId)
+            .Select(membership => membership.UserId);
+
+        var incomes = await _context.Incomes
+            .CountAsync(income => memberIds.Contains(income.UserId), cancellationToken);
+
+        var bills = await _context.Bills
+            .CountAsync(bill => bill.HouseholdId == householdId, cancellationToken);
+
+        return new HouseholdEntryCounts(incomes, bills);
+    }
+
     private static double SumIncomeOccurrences(IEnumerable<Income> entries, PeriodWindow window) =>
         entries.Sum(entry => entry.Value * CountOccurrences(
             entry.StartDate,
