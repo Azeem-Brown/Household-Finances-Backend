@@ -1,52 +1,33 @@
 # Label conventions
 
-Labels on this repository describe three things only: **where an issue is in the workflow**, **whether an agent may pick it up**, and **what kind of scrutiny it needs**. They are advisory metadata. The real controls are branch protection, required reviewers, and environment approvals - a label never authorizes a push, merge, or deployment.
+Labels on this repository describe two things only: **where an issue is in the workflow** and **what kind of scrutiny it needs**. They are advisory metadata. The real controls are branch protection, required reviewers, and environment approvals - a label never authorizes a push, merge, or deployment.
 
 ## Rules
 
-1. **One workflow label per issue.** An issue is in exactly one of `nightshift`, `nightshift:running`, `nightshift:needs-you`, `nightshift:failed`, `in development`, `awaiting-review`, or `awaiting-qa`. Remove the previous one when you add the next.
-2. **Nightshift only takes eligible work.** An issue is eligible when it has `agent-ready`, does not have `blocked`, `decision required`, or `human-only`, and is not already `in development`, `awaiting-review`, or `awaiting-qa`.
-3. **Eligibility is a claim by the author, not an assumption by the agent.** Add `agent-ready` only when the issue has scope, acceptance criteria, and validation filled in.
-4. **Risk labels never grant permission.** They flag work that needs an explicit decision from the user before it runs.
-5. **Do not invent area or type labels ad hoc.** Use the list below or extend this document first.
+1. **One workflow label per issue.** An issue is in exactly one of `in development`, `awaiting-review`, or `awaiting-qa`. Remove the previous one when you add the next.
+2. **Blockers are explicit.** `blocked`, `decision required`, and `human-only` mean the issue should not be picked up, and the reason must be in the body or a linked issue.
+3. **Risk labels never grant permission.** They flag work that needs an explicit decision from the user before it runs.
+4. **Do not invent area or type labels ad hoc.** Use the list below or extend this document first.
 
 ## Workflow
 
 ```mermaid
 stateDiagram-v2
-    [*] --> nightshift: eligible and queued
-    nightshift --> nightshift_running: agent claims
-    nightshift_running --> in_development: branch pushed, PR opened
-    nightshift_running --> nightshift_needs_you: decision needed
-    nightshift_running --> nightshift_failed: no PR or failing checks
+    [*] --> in_development: branch pushed, PR opened
     in_development --> awaiting_review: checks pass
     awaiting_review --> awaiting_qa: merged to DEV
     awaiting_qa --> [*]: promoted and closed
-    nightshift_needs_you --> nightshift: decision recorded
-    nightshift_failed --> nightshift: fixed and requeued
 ```
 
-## Nightshift (automation state)
-
-| Label | Meaning | Set by |
-| --- | --- | --- |
-| `nightshift` | Queued and eligible for the overnight agent | Author |
-| `nightshift:running` | Agent has claimed the issue; prevents a second agent picking it up | Agent at claim time |
-| `nightshift:needs-you` | Agent stopped at a decision gate and needs the user | Agent |
-| `nightshift:failed` | Run ended with no usable PR, failing checks, or a timeout | Agent or reviewer |
-
-A `nightshift:running` claim older than 24 hours is treated as stale: reset the issue to `nightshift` after checking for a half-finished branch or PR.
-
-## Eligibility and blockers
+## Blockers
 
 | Label | Meaning |
 | --- | --- |
-| `agent-ready` | Scope, acceptance criteria, and validation are complete; no open decisions |
 | `human-only` | Needs judgement, credentials, or access an agent should not use |
 | `blocked` | Cannot proceed; the reason is in the body or a linked issue |
 | `decision required` | Waiting on a product or technical decision |
 
-`decision required` mirrors the `[Decision required]` title prefix used by the planner. When the decision is recorded, remove both the label and the prefix, then add `agent-ready` if the issue is otherwise complete.
+`decision required` mirrors the `[Decision required]` title prefix used by the planner. When the decision is recorded, remove both the label and the prefix.
 
 ## Work state
 
@@ -68,7 +49,7 @@ A `nightshift:running` claim older than 24 hours is treated as stale: reset the 
 
 | Label | Meaning |
 | --- | --- |
-| `size: s` | Half a day or less - good nightshift candidate |
+| `size: s` | Half a day or less |
 | `size: m` | One to two days |
 | `size: l` | Larger than two days - split before pickup |
 | `priority: high` | Do next |
