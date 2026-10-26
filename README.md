@@ -363,6 +363,14 @@ credential-free placeholder.
 - Work items: [backend issues](https://github.com/Azeem-Brown/Household-Finances-Backend/issues)
 - Product specification: [frontend `Family Expense Planner.md`](https://github.com/Azeem-Brown/Household-Finances-Frontend/blob/DEV/Family%20Expense%20Planner.md)
 
+## Continuous integration
+
+Every pull request into `DEV` runs the `CI` GitHub Actions workflow (`.github/workflows/ci.yml`),
+which restores, builds in Release, and runs the test suite on `ubuntu-latest`. The tests use the
+EF Core InMemory provider and a stubbed identity provider, so the workflow needs no MySQL server,
+no Google credentials, and no repository secrets. A broken build or failing test fails the check
+before review.
+
 ## Out of scope for this scaffold
 
 Repositories, services, controllers, authentication, seed data, and database provisioning
