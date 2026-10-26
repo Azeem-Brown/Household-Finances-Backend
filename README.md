@@ -357,6 +357,12 @@ credential-free placeholder.
   `"3307:3306"`) and update the port in the connection string to match. Only one process can
   bind host port 3306 at a time.
 
+## Documentation
+
+- Label conventions: [`docs/labels.md`](./docs/labels.md)
+- Work items: [backend issues](https://github.com/Azeem-Brown/Household-Finances-Backend/issues)
+- Product specification: [frontend `Family Expense Planner.md`](https://github.com/Azeem-Brown/Household-Finances-Frontend/blob/DEV/Family%20Expense%20Planner.md)
+
 ## Out of scope for this scaffold
 
 Repositories, services, controllers, authentication, seed data, and database provisioning
