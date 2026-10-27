@@ -85,6 +85,33 @@ public interface IHouseholdRepository
     /// <param name="cancellationToken">Cancels the operation.</param>
     Task AddMembershipAsync(UserHousehold membership, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reads a household's logo, or <c>null</c> when the household has none. This does not check
+    /// membership: the caller is expected to resolve the household for the current user first, so
+    /// the membership boundary stays in one place.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The household's logo, or <c>null</c>.</returns>
+    Task<HouseholdLogo?> GetLogoAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Inserts the logo when the household has none, or replaces the existing one. Changes are
+    /// tracked only; call <see cref="SaveChangesAsync"/> to persist them.
+    /// </summary>
+    /// <param name="logo">The logo to store.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    Task UpsertLogoAsync(HouseholdLogo logo, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks the household's logo for removal. Changes are tracked only; call
+    /// <see cref="SaveChangesAsync"/> to persist them.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns><c>true</c> when a logo was marked for removal; <c>false</c> when there was none.</returns>
+    Task<bool> RemoveLogoAsync(Guid householdId, CancellationToken cancellationToken = default);
+
     /// <summary>Persists pending changes to the underlying store.</summary>
     /// <param name="cancellationToken">Cancels the operation.</param>
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
