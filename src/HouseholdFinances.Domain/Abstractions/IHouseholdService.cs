@@ -1,0 +1,157 @@
+using HouseholdFinances.Domain.Entities;
+using HouseholdFinances.Domain.Models;
+
+namespace HouseholdFinances.Domain.Abstractions;
+
+/// <summary>
+/// Household operations for the current, authenticated user. The user is always resolved from
+/// <see cref="ICurrentUserService"/>; a user id is never accepted from the client, so one user can
+/// never read or modify another user's household.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Current household resolution (first version).</b> Membership is many-to-many through
+/// <c>UserHousehold</c>. A user with exactly one membership has that household as their current
+/// household; <see cref="ListForCurrentUserAsync"/> returns every membership, and the client selects
+/// the current one from the list. No separate server-side "current household" pointer or endpoint is
+/// added in this version.
+/// </para>
+/// <para>
+/// <b>Totals.</b> <c>Incomes</c> and <c>Payments</c> are computed on read from the household's
+/// entries (the members' income entries and the household's bill entries) rather than stored
+/// authoritatively. They are the sum of the discrete occurrences that fall inside the requested
+/// calendar window, using the approved recurrence rule: occurrences step from an entry's start date
+/// by its interval until its inclusive end date, and a one-off counts once when its start date is
+/// inside the window. The window is derived from <see cref="TimeProvider.GetUtcNow"/>.
+/// </para>
+/// <para>
+/// <b>Entry counts.</b> <c>IncomeEntryCount</c> and <c>BillEntryCount</c> are the number of stored
+/// entries and are independent of the requested period: they are never expanded or filtered by a
+/// calendar window, so a household with entries outside the selected period still reports non-zero
+/// counts while its totals are zero.
+/// </para>
+/// </remarks>
+public interface IHouseholdService
+{
+    /// <summary>
+    /// Creates a household and the current user's membership in it, then returns the household with
+    /// its computed totals. The name is trimmed before it is stored.
+    /// </summary>
+    /// <param name="name">The household's name.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The created household.</returns>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The name is null, empty, or whitespace (<see cref="Errors.ErrorCode.InvalidInput"/>); the
+    /// request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>); or the membership
+    /// already exists (<see cref="Errors.ErrorCode.Conflict"/>).
+    /// </exception>
+    Task<HouseholdDetail> CreateAsync(string? name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists the current user's households, ordered by name, each with its totals for the
+    /// occurrences inside the calendar window for <paramref name="period"/>. Empty when the user has
+    /// no membership.
+    /// </summary>
+    /// <param name="period">The calendar period whose window is totalled.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The current user's households.</returns>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>).
+    /// </exception>
+    Task<IReadOnlyList<HouseholdDetail>> ListForCurrentUserAsync(
+        Interval period,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the household with the supplied identifier when the current user is a member of it,
+    /// with its totals for the occurrences inside the calendar window for <paramref name="period"/>.
+    /// A household the user does not belong to is reported as not found, so the API never discloses
+    /// the existence of another user's household.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="period">The calendar period whose window is totalled.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The household with its windowed totals.</returns>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>) or the user is
+    /// not a member of the household (<see cref="Errors.ErrorCode.NotFound"/>).
+    /// </exception>
+    Task<HouseholdDetail> GetByIdAsync(
+        Guid householdId,
+        Interval period,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes the current user's membership of the household. The household, its bills, goals,
+    /// items, and logo remain for the other members, and the user's own income entries are their own
+    /// records, so nothing is deleted. A creator who leaves does not pass ownership on.
+    /// </summary>
+    /// <param name="householdId">The household to leave.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>), or the user is
+    /// not a member of the household or it does not exist
+    /// (<see cref="Errors.ErrorCode.NotFound"/>).
+    /// </exception>
+    Task LeaveAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes the household and everything that belongs to it: its bills, goals, items, logo, and
+    /// memberships. The user's own income entries are unaffected because they are the user's
+    /// records. Only the user who created the household may delete it, and only when it has no other
+    /// members, so no member loses data without choosing to.
+    /// </summary>
+    /// <param name="householdId">The household to delete.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>); the user is not
+    /// a member of the household or it does not exist
+    /// (<see cref="Errors.ErrorCode.NotFound"/>); or the user did not create the household, or other
+    /// members still belong to it (<see cref="Errors.ErrorCode.Conflict"/>).
+    /// </exception>
+    Task DeleteAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets or replaces the household's logo. The current user must be a member. The upload is
+    /// validated before anything is written, so a rejected upload leaves any existing logo in place.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="content">The image bytes.</param>
+    /// <param name="contentType">The media type reported by the client, matched against the accepted image types.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>); the user is not
+    /// a member of the household, or no such household exists
+    /// (<see cref="Errors.ErrorCode.NotFound"/>); or the upload is empty, an unsupported media type,
+    /// or larger than the accepted size (<see cref="Errors.ErrorCode.InvalidInput"/>).
+    /// </exception>
+    Task SetLogoAsync(
+        Guid householdId,
+        byte[]? content,
+        string? contentType,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the household's logo. The current user must be a member.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The logo, or <c>null</c> when the household has none.</returns>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>), or the user is
+    /// not a member of the household (<see cref="Errors.ErrorCode.NotFound"/>).
+    /// </exception>
+    Task<HouseholdLogoContent?> GetLogoAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes the household's logo. The current user must be a member.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns><c>true</c> when a logo was removed; <c>false</c> when the household had none.</returns>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>), or the user is
+    /// not a member of the household (<see cref="Errors.ErrorCode.NotFound"/>).
+    /// </exception>
+    Task<bool> RemoveLogoAsync(Guid householdId, CancellationToken cancellationToken = default);
+}

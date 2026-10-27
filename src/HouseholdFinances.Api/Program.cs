@@ -1,0 +1,167 @@
+using HouseholdFinances.Api.Authentication;
+using HouseholdFinances.Api.Conventions;
+using HouseholdFinances.Api.Errors;
+using HouseholdFinances.Domain.Errors;
+using HouseholdFinances.Infrastructure.DependencyInjection;
+using HouseholdFinances.Infrastructure.Persistence;
+
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+// MVC controllers are the convention for domain endpoints. Every controller route is served
+// under the versioned /api/v1 prefix (see ApiRoutePrefixConvention).
+builder.Services
+    .AddControllers(options => options.Conventions.Add(new ApiRoutePrefixConvention(ApiRoutePrefixConvention.DefaultPrefix)))
+    .AddJsonOptions(options => ApiJsonConventions.Apply(options.JsonSerializerOptions));
+
+// Minimal API endpoints share the controller JSON conventions.
+builder.Services.ConfigureHttpJsonOptions(options => ApiJsonConventions.Apply(options.SerializerOptions));
+
+// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+builder.Services.AddOpenApi(OpenApiConventions.Configure);
+
+// Register the EF Core MySQL context. The connection string is read from
+// configuration (appsettings placeholder, user secrets, or environment variables).
+builder.Services.AddHouseholdFinancesDbContext(builder.Configuration);
+
+// "Now" for calendar windows comes from the injected clock, never from DateTime.UtcNow or
+// DateTime.Today directly. Tests replace this registration with a pinned provider.
+builder.Services.AddSingleton(TimeProvider.System);
+
+// Household domain repository and service implementations (Infrastructure).
+builder.Services.AddHouseholdFinancesHouseholdDomain();
+// User domain repository and service implementations (Infrastructure).
+builder.Services.AddHouseholdFinancesUserDomain();
+// Income domain service implementation (Infrastructure).
+builder.Services.AddHouseholdFinancesIncomeDomain();
+// Bill domain service implementation (Infrastructure).
+builder.Services.AddHouseholdFinancesBillDomain();
+// Refresh-token store used to enforce single use and family revocation (Infrastructure).
+builder.Services.AddHouseholdFinancesRefreshTokens();
+// Goal domain service implementation (Infrastructure).
+builder.Services.AddHouseholdFinancesGoalDomain();
+
+// Authentication/authorization plumbing. The API validates a Google Identity ID token at the
+// sign-in endpoint and issues its own JWT, which this bearer scheme validates on every request.
+// An authenticated user is the default requirement for controllers; infrastructure endpoints opt
+// out with AllowAnonymous.
+builder.Services.AddHouseholdFinancesAuthentication(builder.Configuration, builder.Environment);
+
+// Resolves the authenticated user from the request principal for domain and API code.
+builder.Services.AddCurrentUserAccessor();
+
+// Throttles the anonymous authentication endpoints per client address. The limits come from
+// configuration (Authentication:RateLimiting) with conservative defaults, and only endpoints that
+// name a policy are throttled, so health, the service info endpoint, and the OpenAPI document are
+// unaffected.
+builder.Services.AddHouseholdFinancesRateLimiting(builder.Configuration);
+
+WebApplication app = builder.Build();
+
+// Report a schema that is behind the code. Migrations are applied by hand, so a merged migration
+// can be missing from the database; without this the mismatch surfaces as a generic 500 on
+// whichever endpoint first touches a missing table. The check only reports: it applies nothing and
+// never blocks startup.
+try
+{
+    using IServiceScope migrationScope = app.Services.CreateScope();
+    HouseholdFinancesDbContext migrationContext =
+        migrationScope.ServiceProvider.GetRequiredService<HouseholdFinancesDbContext>();
+    PendingMigrationWarning.LogIfPending(PendingMigrationWarning.GetPending(migrationContext), app.Logger);
+}
+catch (Exception exception)
+{
+    app.Logger.LogWarning(exception, "The pending-migration check could not run.");
+}
+
+// Startup guard: the development Google token bypass opt-in must never be enabled outside
+// Development. Registration already scopes the bypass to Development and requires the opt-in;
+// this makes a misconfiguration fail fast and names the offending setting.
+DevelopmentGoogleTokenBypassOptions bypassOptions = app.Services.GetRequiredService<DevelopmentGoogleTokenBypassOptions>();
+if (bypassOptions.Enabled && !app.Environment.IsDevelopment())
+{
+    throw new InvalidOperationException(
+        $"The development Google token bypass '{DevelopmentGoogleTokenBypassOptions.SectionName}:Enabled' "
+        + "is enabled, but the host is not running in the Development environment. The bypass is "
+        + "development-only; remove the setting or set it to false.");
+}
+
+if (bypassOptions.Enabled && app.Environment.IsDevelopment())
+{
+    // Visible in the console at startup so an enabled bypass is never mistaken for real sign-in.
+    app.Logger.LogWarning(
+        "The development Google token bypass is active: the API accepts any token prefixed with "
+        + "'{Prefix}' as the signed-in identity. This is for local development only and must never "
+        + "be enabled outside Development.",
+        DevelopmentGoogleTokenValidator.TokenPrefix);
+}
+
+// Defense in depth: even if a future change registered the bypass validator directly, it must
+// never be active outside Development.
+if (!app.Environment.IsDevelopment()
+    && app.Services.GetRequiredService<IGoogleTokenValidator>() is DevelopmentGoogleTokenValidator)
+{
+    throw new InvalidOperationException(
+        "The development Google token validator must not be active outside the Development environment.");
+}
+
+// Global exception handling runs first so every later middleware and endpoint failure is
+// translated into a ProblemDetails response.
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// Applied before authentication so a throttled caller is rejected without doing any token work.
+// Only the endpoints whose actions name a policy are limited.
+app.UseRateLimiter();
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    // Serve the generated OpenAPI document and its Swagger UI in development only. They are
+    // infrastructure, so they opt out of the default authenticated-user requirement.
+    app.MapOpenApi().AllowAnonymous();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint(OpenApiConventions.DocumentRoute, "Household Finances API v1");
+        options.RoutePrefix = OpenApiConventions.SwaggerUiRoutePrefix;
+    });
+}
+
+app.UseHttpsRedirection();
+
+// Authentication populates HttpContext.User from the registered scheme; authorization enforces
+// the default authenticated-user requirement set up in AddHouseholdFinancesAuthentication.
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Minimal endpoint so the host can be confirmed to start and respond.
+// Domain, persistence, and authentication are added by later issues.
+app.MapGet("/", () => Results.Ok(new { service = "HouseholdFinances.Api", status = "ok" }))
+    .WithName("GetServiceInfo")
+    .AllowAnonymous();
+
+// Liveness/readiness probe. Deliberately unversioned: it is infrastructure, not domain API.
+app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
+    .WithName("GetHealth")
+    .WithSummary("Liveness and readiness probe for the API host.")
+    .AllowAnonymous();
+
+// Placeholder that demonstrates the error convention end to end: the typed exception is caught
+// by ExceptionHandlingMiddleware and returned as a ProblemDetails body. Real endpoints replace
+// this in later issues.
+app.MapGet(
+        "/api/error-convention/{identifier:guid}",
+        DemonstrateErrorConvention)
+    .WithName("DemonstrateErrorConvention")
+    .AllowAnonymous();
+
+// Controller routes are discovered here; the ApiRoutePrefixConvention wraps them in /api/v1.
+app.MapControllers();
+
+app.Run();
+
+static IResult DemonstrateErrorConvention(Guid identifier) =>
+    throw new HouseholdFinancesException(ErrorCode.NotFound, identifier);
+
+/// <summary>Exposed so the test project can host the API with WebApplicationFactory.</summary>
+public partial class Program
+{
+}

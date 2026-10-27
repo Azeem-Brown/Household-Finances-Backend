@@ -1,0 +1,14 @@
+root = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+charset = utf-8
+
+# Explicit types are required in production code (issue #42). IDE0008 is promoted to an error so the
+# build fails on a new `var` instead of leaving it for a reviewer to notice. Test code keeps the
+# established style; see tests/.editorconfig.
+csharp_style_var_for_built_in_types = false:error
+csharp_style_var_when_type_is_apparent = false:error
+csharp_style_var_elsewhere = false:error
+dotnet_diagnostic.IDE0008.severity = error

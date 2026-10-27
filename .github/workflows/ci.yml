@@ -1,0 +1,40 @@
+name: CI
+
+# Builds and tests every pull request into DEV. The tests use the EF Core InMemory provider and a
+# stubbed identity provider, so this workflow needs no MySQL server, no Google credentials, and no
+# repository secrets.
+
+on:
+  pull_request:
+    branches: [DEV]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore HouseholdFinances.sln
+
+      - name: Build
+        run: dotnet build HouseholdFinances.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test HouseholdFinances.sln -c Release --no-restore --no-build

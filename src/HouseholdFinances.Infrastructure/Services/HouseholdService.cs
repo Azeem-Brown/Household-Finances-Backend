@@ -1,0 +1,370 @@
+using HouseholdFinances.Domain.Abstractions;
+using HouseholdFinances.Domain.Entities;
+using HouseholdFinances.Domain.Errors;
+using HouseholdFinances.Domain.Models;
+
+namespace HouseholdFinances.Infrastructure.Services;
+
+/// <summary>
+/// Implements the Household operations for the current, authenticated user. The user is always
+/// resolved from <see cref="ICurrentUserService"/>, so a client can never target another user's
+/// household. Incomes and Payments are computed on read as the sum of the entry occurrences inside
+/// a requested calendar window, and are never stored authoritatively. The clock comes from
+/// <see cref="TimeProvider"/>, which the tests pin. The entry counts are the number of stored
+/// entries and deliberately ignore the window, so a household whose entries fall outside the
+/// requested period still reports that it has entries.
+/// </summary>
+public sealed class HouseholdService : IHouseholdService
+{
+    /// <summary>
+    /// Identifier of significance reported when the household name fails validation. The error
+    /// convention is <c>&lt;enum&gt; &lt;identifier&gt;</c>, so the identifier is the field being
+    /// validated.
+    /// </summary>
+    public const string NameIdentifier = "Name";
+
+    /// <summary>
+    /// Identifier of significance reported when the current user cannot be resolved from the
+    /// authenticated principal. A fixed token is used so no user-supplied value reaches the response
+    /// or logs.
+    /// </summary>
+    public const string CurrentUserIdentifier = "me";
+
+    /// <summary>
+    /// Identifier reported when a user who did not create a household tries to delete it. The
+    /// household is left untouched; the member can leave instead.
+    /// </summary>
+    public const string CreatorIdentifier = "Creator";
+
+    /// <summary>
+    /// Identifier reported when a creator tries to delete a household that other members still
+    /// belong to. Deleting would remove their data without their consent.
+    /// </summary>
+    public const string MemberCountIdentifier = "MemberCount";
+
+    /// <summary>
+    /// Identifier of significance reported when an upload carries no readable image. The error
+    /// convention is <c>&lt;enum&gt; &lt;identifier&gt;</c>, so the identifier names the field that
+    /// failed validation.
+    /// </summary>
+    public const string LogoIdentifier = "Logo";
+
+    /// <summary>Identifier reported when the uploaded image is not one of the accepted media types.</summary>
+    public const string LogoContentTypeIdentifier = "LogoContentType";
+
+    /// <summary>Identifier reported when the uploaded image exceeds <see cref="MaxLogoBytes"/>.</summary>
+    public const string LogoSizeIdentifier = "LogoSize";
+
+    /// <summary>
+    /// Largest accepted logo, in bytes. The database column holds far more, so this ceiling is a
+    /// domain decision about how large a household logo should reasonably be, not a storage limit.
+    /// </summary>
+    public const int MaxLogoBytes = 2 * 1024 * 1024;
+
+    /// <summary>
+    /// Largest accepted logo upload request, in bytes. A multipart envelope adds boundaries and part
+    /// headers, so this sits above <see cref="MaxLogoBytes"/>; the exact image ceiling is still
+    /// enforced against the decoded bytes, which is what a client cannot pad around.
+    /// </summary>
+    public const int MaxLogoUploadRequestBytes = MaxLogoBytes + (64 * 1024);
+
+    /// <summary>The media types accepted for a household logo.</summary>
+    public static readonly IReadOnlyList<string> AllowedLogoContentTypes = new[]
+    {
+        "image/png",
+        "image/jpeg",
+        "image/webp"
+    };
+
+    private readonly IHouseholdRepository _repository;
+    private readonly ICurrentUserService _currentUserService;
+    private readonly TimeProvider _timeProvider;
+
+    /// <summary>Creates the service.</summary>
+    /// <param name="repository">Persistence access for the Household domain.</param>
+    /// <param name="currentUserService">Resolves the authenticated user for the current request.</param>
+    /// <param name="timeProvider">Supplies the UTC clock used to derive the calendar window.</param>
+    public HouseholdService(
+        IHouseholdRepository repository,
+        ICurrentUserService currentUserService,
+        TimeProvider timeProvider)
+    {
+        _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    }
+
+    /// <inheritdoc />
+    public async Task<HouseholdDetail> CreateAsync(string? name, CancellationToken cancellationToken = default)
+    {
+        string? trimmedName = name?.Trim();
+        if (string.IsNullOrEmpty(trimmedName))
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, NameIdentifier);
+        }
+
+        Guid userId = ResolveCurrentUserId();
+
+        Household household = new Household
+        {
+            Id = Guid.NewGuid(),
+            Name = trimmedName,
+            CreatedByUserId = userId
+        };
+
+        // Enforce the one-membership-per-user/household invariant in the application layer. This
+        // flow always allocates a fresh household id, so the check is defensive; the unique index on
+        // the join table backs it at the database.
+        if (await _repository.MembershipExistsAsync(household.Id, userId, cancellationToken))
+        {
+            throw new HouseholdFinancesException(ErrorCode.Conflict, household.Id);
+        }
+
+        // Incomes and Payments are intentionally not written; they are computed on read.
+        await _repository.AddAsync(household, cancellationToken);
+        await _repository.AddMembershipAsync(
+            new UserHousehold
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                HouseholdId = household.Id
+            },
+            cancellationToken);
+        await _repository.SaveChangesAsync(cancellationToken);
+
+        // A new household has no entries. The default Monthly window keeps the read model shape
+        // consistent without adding a period parameter to the create flow.
+        HouseholdTotals totals = await _repository.GetTotalsAsync(
+            household.Id,
+            CurrentWindow(Interval.Monthly),
+            cancellationToken);
+        HouseholdEntryCounts entryCounts = await _repository.GetEntryCountsAsync(household.Id, cancellationToken);
+
+        // The creator has just been made the household's only member, so the counts are known
+        // without another read.
+        return ToDetail(household, totals, entryCounts, userId, memberCount: 1);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<HouseholdDetail>> ListForCurrentUserAsync(
+        Interval period,
+        CancellationToken cancellationToken = default)
+    {
+        Guid userId = ResolveCurrentUserId();
+
+        // Resolve "now" once per request so every household in the list uses one window.
+        PeriodWindow window = CurrentWindow(period);
+
+        IReadOnlyList<Household> households = await _repository.GetByMemberAsync(userId, cancellationToken);
+
+        List<HouseholdDetail> details = new List<HouseholdDetail>(households.Count);
+        foreach (Household household in households)
+        {
+            HouseholdTotals totals = await _repository.GetTotalsAsync(household.Id, window, cancellationToken);
+            HouseholdEntryCounts entryCounts = await _repository.GetEntryCountsAsync(household.Id, cancellationToken);
+            int memberCount = await _repository.CountMembersAsync(household.Id, cancellationToken);
+            details.Add(ToDetail(household, totals, entryCounts, userId, memberCount));
+        }
+
+        return details;
+    }
+
+    /// <inheritdoc />
+    public async Task<HouseholdDetail> GetByIdAsync(
+        Guid householdId,
+        Interval period,
+        CancellationToken cancellationToken = default)
+    {
+        Guid userId = ResolveCurrentUserId();
+
+        // A household the user does not belong to is reported as not found so the API never
+        // discloses the existence of another user's household.
+        Household household = await _repository.GetForMemberAsync(householdId, userId, cancellationToken)
+            ?? throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
+
+        HouseholdTotals totals = await _repository.GetTotalsAsync(
+            householdId,
+            CurrentWindow(period),
+            cancellationToken);
+
+        // Deliberately read without the window: the counts describe the household's entries, not
+        // the occurrences inside the requested period.
+        HouseholdEntryCounts entryCounts = await _repository.GetEntryCountsAsync(householdId, cancellationToken);
+        int memberCount = await _repository.CountMembersAsync(householdId, cancellationToken);
+
+        return ToDetail(household, totals, entryCounts, userId, memberCount);
+    }
+
+    /// <inheritdoc />
+    public async Task LeaveAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        Guid userId = ResolveCurrentUserId();
+
+        // A household the user does not belong to is reported as not found, so leaving cannot be
+        // used to discover another user's household.
+        Household household = await _repository.GetForMemberAsync(householdId, userId, cancellationToken)
+            ?? throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
+
+        // The household and its bills, goals, items, and logo stay for the remaining members. A
+        // creator who leaves does not hand ownership on, so the household becomes delete-locked
+        // rather than silently transferring the right to delete it.
+        if (!await _repository.RemoveMembershipAsync(household.Id, userId, cancellationToken))
+        {
+            throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
+        }
+
+        await _repository.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        Guid userId = ResolveCurrentUserId();
+
+        Household household = await _repository.GetForMemberAsync(householdId, userId, cancellationToken)
+            ?? throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
+
+        // Deleting is the creator's decision, because it removes the household for everyone still in
+        // it. Removing just the caller's membership is what LeaveAsync is for.
+        if (household.CreatedByUserId != userId)
+        {
+            throw new HouseholdFinancesException(ErrorCode.Conflict, CreatorIdentifier);
+        }
+
+        // Other members would lose data they did not choose to lose, so the creator can only delete
+        // a household they are the only member of.
+        int memberCount = await _repository.CountMembersAsync(householdId, cancellationToken);
+        if (memberCount > 1)
+        {
+            throw new HouseholdFinancesException(ErrorCode.Conflict, MemberCountIdentifier);
+        }
+
+        await _repository.RemoveAsync(household, cancellationToken);
+        await _repository.SaveChangesAsync(cancellationToken);
+    }
+
+    private PeriodWindow CurrentWindow(Interval period) =>
+        PeriodWindow.For(period, DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime));
+
+    private static HouseholdDetail ToDetail(
+        Household household,
+        HouseholdTotals totals,
+        HouseholdEntryCounts entryCounts,
+        Guid userId,
+        int memberCount) =>
+        new(
+            household.Id,
+            household.Name,
+            RoundMoney(totals.Incomes),
+            RoundMoney(totals.Payments),
+            entryCounts.Incomes,
+            entryCounts.Bills,
+            household.CreatedByUserId == userId,
+            memberCount);
+    /// <inheritdoc />
+    public async Task SetLogoAsync(
+        Guid householdId,
+        byte[]? content,
+        string? contentType,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureMemberAsync(householdId, cancellationToken);
+
+        // Any media-type parameters are dropped before matching, so a client that sends
+        // "image/png; charset=binary" is accepted rather than rejected for the suffix.
+        string? mediaType = contentType?.Split(';', 2)[0].Trim().ToLowerInvariant();
+
+        // Every check runs before anything is written. A rejected upload must never replace a logo
+        // the household already has, which is why this is not a single combined condition: the
+        // identifier tells the client which rule failed.
+        if (content is null || content.Length == 0)
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, LogoIdentifier);
+        }
+
+        if (string.IsNullOrEmpty(mediaType) || !AllowedLogoContentTypes.Contains(mediaType))
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, LogoContentTypeIdentifier);
+        }
+
+        if (content.Length > MaxLogoBytes)
+        {
+            throw new HouseholdFinancesException(ErrorCode.InvalidInput, LogoSizeIdentifier);
+        }
+
+        await _repository.UpsertLogoAsync(
+            new HouseholdLogo
+            {
+                HouseholdId = householdId,
+                Content = content,
+                ContentType = mediaType,
+                UpdatedAtUtc = DateTime.UtcNow
+            },
+            cancellationToken);
+
+        await _repository.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<HouseholdLogoContent?> GetLogoAsync(
+        Guid householdId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureMemberAsync(householdId, cancellationToken);
+
+        HouseholdLogo? logo = await _repository.GetLogoAsync(householdId, cancellationToken);
+
+        return logo is null
+            ? null
+            : new HouseholdLogoContent(logo.Content, logo.ContentType);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> RemoveLogoAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        await EnsureMemberAsync(householdId, cancellationToken);
+
+        if (!await _repository.RemoveLogoAsync(householdId, cancellationToken))
+        {
+            return false;
+        }
+
+        await _repository.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves the current user and confirms they belong to the household, raising the same errors
+    /// every other household operation raises. A non-member is reported as not found, so the logo
+    /// endpoints cannot be used to discover another user's household.
+    /// </summary>
+    private async Task EnsureMemberAsync(Guid householdId, CancellationToken cancellationToken)
+    {
+        Guid userId = ResolveCurrentUserId();
+
+        _ = await _repository.GetForMemberAsync(householdId, userId, cancellationToken)
+            ?? throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
+    }
+
+
+
+    // Money is USD with two decimal places, half-up (recorded decision).
+    private static double RoundMoney(double value) =>
+        Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private Guid ResolveCurrentUserId()
+    {
+        string? identifier = _currentUserService.UserIdentifier;
+
+        if (!_currentUserService.IsAuthenticated
+            || string.IsNullOrWhiteSpace(identifier)
+            || !Guid.TryParse(identifier, out Guid userId))
+        {
+            // Defense in depth: the default authorization policy already rejects unauthenticated
+            // requests with 401 before the action runs.
+            throw new HouseholdFinancesException(ErrorCode.Unauthorized, CurrentUserIdentifier);
+        }
+
+        return userId;
+    }
+}
