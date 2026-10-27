@@ -12,9 +12,18 @@ namespace HouseholdFinances.Api.Models;
 /// <para>
 /// <see cref="Interval"/> is nullable so the service can distinguish an omitted interval from the
 /// zero-valued <see cref="Entities.Interval.Daily"/>; it is required only when
-/// <see cref="Recurring"/> is true.
+/// <see cref="Recurring"/> is true. A supplied interval on a non-recurring goal is cleared to null
+/// rather than rejected, so the response always reports the one-off representation.
 /// </para>
 /// <para>
+/// <b>Recurrence</b> (approved decision #5). A recurring goal expands occurrences from
+/// <see cref="StartDate"/> by <see cref="Interval"/> until <see cref="EndDate"/> inclusive, stepping
+/// +1 day, +7 days, +14 days, +1 month, +3 months, or +1 year, anchored to the original start date.
+/// A goal that is not recurring has exactly one occurrence, on <see cref="StartDate"/>. Dates are
+/// UTC calendar dates, so time of day is ignored.
+/// </para>
+/// <para>
+/// <see cref="Value"/> is the target amount and is never multiplied by the number of occurrences.
 /// <see cref="Total"/> is the amount contributed toward the goal so far. A create ignores it (a new
 /// goal starts at 0); an update applies it.
 /// </para>

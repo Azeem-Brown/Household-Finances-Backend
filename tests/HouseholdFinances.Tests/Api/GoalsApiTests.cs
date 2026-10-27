@@ -216,6 +216,32 @@ public class GoalsApiTests
     }
 
     [Fact]
+    public async Task Create_NonRecurringWithAnInterval_ReturnsNullInterval()
+    {
+        using var factory = new Factory();
+        var householdId = Guid.NewGuid();
+        Seed(factory, context => AddHousehold(context, householdId, UserId));
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/households/{householdId}/goals",
+            new { name = "One-off deposit", value = 500.00, startDate = Start, endDate = End, recurring = false, interval = 1 });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"interval\":null", json);
+
+        // The stored goal reports the one-off representation, not the cadence the client sent.
+        using var listResponse = await client.GetAsync($"/api/v1/households/{householdId}/goals");
+        using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        var goal = Assert.Single(listDocument.RootElement.EnumerateArray().ToList());
+        Assert.False(goal.GetProperty("recurring").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, goal.GetProperty("interval").ValueKind);
+    }
+
+    [Fact]
     public async Task Update_RecurringGoalChangedToOneOff_ReturnsNullInterval()
     {
         using var factory = new Factory();
@@ -244,6 +270,47 @@ public class GoalsApiTests
         using var response = await client.PutAsJsonAsync(
             $"/api/v1/households/{householdId}/goals/{goalId}",
             new { name = "One-off deposit", value = 500.00, startDate = Start, endDate = End, recurring = false, interval = (int?)null, total = 500.00 });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"interval\":null", json);
+
+        using var document = JsonDocument.Parse(json);
+        Assert.False(document.RootElement.GetProperty("recurring").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("interval").ValueKind);
+    }
+
+    [Fact]
+    public async Task Update_RecurringGoalChangedToOneOffWithAnInterval_ReturnsNullInterval()
+    {
+        using var factory = new Factory();
+        var householdId = Guid.NewGuid();
+        var goalId = Guid.NewGuid();
+        Seed(factory, context =>
+        {
+            AddHousehold(context, householdId, UserId);
+            context.Goals.Add(new Goal
+            {
+                Id = goalId,
+                Name = "Emergency Fund",
+                Value = 10000.00,
+                StartDate = Start,
+                EndDate = End,
+                Recurring = true,
+                Interval = Interval.Monthly,
+                HouseholdId = householdId,
+                UserId = UserId,
+                Total = 500.00
+            });
+        });
+
+        using var client = CreateAuthenticatedClient(factory, UserId);
+
+        // The client keeps the old cadence while switching to one-off; the API must not persist it.
+        using var response = await client.PutAsJsonAsync(
+            $"/api/v1/households/{householdId}/goals/{goalId}",
+            new { name = "One-off deposit", value = 500.00, startDate = Start, endDate = End, recurring = false, interval = 1, total = 500.00 });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
