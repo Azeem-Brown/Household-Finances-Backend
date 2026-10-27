@@ -65,13 +65,13 @@ public sealed class DevelopmentGoogleTokenValidator : IGoogleTokenValidator
         if (!string.IsNullOrWhiteSpace(idToken)
             && idToken.StartsWith(TokenPrefix, StringComparison.Ordinal))
         {
-            var subject = idToken[TokenPrefix.Length..].Trim();
+            string subject = idToken[TokenPrefix.Length..].Trim();
             if (subject.Length == 0)
             {
                 throw new InvalidGoogleTokenException("The development token has no subject.");
             }
 
-            var payload = new GoogleTokenPayload(
+            GoogleTokenPayload payload = new GoogleTokenPayload(
                 subject,
                 $"{subject}@dev.local",
                 $"Development {subject}",

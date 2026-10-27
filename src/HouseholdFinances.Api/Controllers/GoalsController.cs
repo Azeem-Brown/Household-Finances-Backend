@@ -40,7 +40,7 @@ public sealed class GoalsController : ControllerBase
         [FromBody] GoalRequest request,
         CancellationToken cancellationToken)
     {
-        var goal = await _goalService.CreateAsync(householdId, request.ToInput(), cancellationToken);
+        GoalDetail goal = await _goalService.CreateAsync(householdId, request.ToInput(), cancellationToken);
 
         return Created($"{Request.Path}/{goal.Id}", goal);
     }

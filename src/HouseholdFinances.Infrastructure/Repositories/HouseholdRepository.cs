@@ -66,17 +66,17 @@ public sealed class HouseholdRepository : IHouseholdRepository
         // DateOnly translation. The window bounds are inclusive, and the candidate filter uses
         // half-open reasoning: an entry can overlap the window when it starts on or before the
         // window's last day and ends on or after the window's first day.
-        var windowStart = window.Start.ToDateTime(TimeOnly.MinValue);
-        var windowEnd = window.End.ToDateTime(TimeOnly.MaxValue);
+        DateTime windowStart = window.Start.ToDateTime(TimeOnly.MinValue);
+        DateTime windowEnd = window.End.ToDateTime(TimeOnly.MaxValue);
 
         // Income has no household key, so the household's membership defines which incomes belong to
         // it. A Contains subquery over the member ids avoids double counting when a member has more
         // than one row (the unique membership index prevents that in any case).
-        var memberIds = _context.UserHouseholds
+        IQueryable<Guid> memberIds = _context.UserHouseholds
             .Where(membership => membership.HouseholdId == householdId)
             .Select(membership => membership.UserId);
 
-        var incomes = await _context.Incomes
+        List<Income> incomes = await _context.Incomes
             .Where(income => memberIds.Contains(income.UserId)
                 && income.StartDate <= windowEnd
                 && income.EndDate >= windowStart)
@@ -84,7 +84,7 @@ public sealed class HouseholdRepository : IHouseholdRepository
             .ToListAsync(cancellationToken);
 
         // Bills carry the household key directly.
-        var bills = await _context.Bills
+        List<Bill> bills = await _context.Bills
             .Where(bill => bill.HouseholdId == householdId
                 && bill.StartDate <= windowEnd
                 && bill.EndDate >= windowStart)
@@ -105,14 +105,14 @@ public sealed class HouseholdRepository : IHouseholdRepository
         // GetTotalsAsync, income rows have no household key, so the household's membership defines
         // which incomes belong to it. Both counts are aggregated in the store rather than by
         // materialising the rows.
-        var memberIds = _context.UserHouseholds
+        IQueryable<Guid> memberIds = _context.UserHouseholds
             .Where(membership => membership.HouseholdId == householdId)
             .Select(membership => membership.UserId);
 
-        var incomes = await _context.Incomes
+        int incomes = await _context.Incomes
             .CountAsync(income => memberIds.Contains(income.UserId), cancellationToken);
 
-        var bills = await _context.Bills
+        int bills = await _context.Bills
             .CountAsync(bill => bill.HouseholdId == householdId, cancellationToken);
 
         return new HouseholdEntryCounts(incomes, bills);

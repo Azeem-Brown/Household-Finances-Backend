@@ -39,7 +39,7 @@ public sealed class IncomesController : ControllerBase
         [FromBody] IncomeRequest request,
         CancellationToken cancellationToken)
     {
-        var income = await _incomeService.CreateAsync(householdId, request.ToInput(), cancellationToken);
+        IncomeDetail income = await _incomeService.CreateAsync(householdId, request.ToInput(), cancellationToken);
 
         return Created($"{Request.Path}/{income.Id}", income);
     }

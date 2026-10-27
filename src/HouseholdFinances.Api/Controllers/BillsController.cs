@@ -39,7 +39,7 @@ public sealed class BillsController : ControllerBase
         [FromBody] BillRequest request,
         CancellationToken cancellationToken)
     {
-        var bill = await _billService.CreateAsync(householdId, request.ToInput(), cancellationToken);
+        BillDetail bill = await _billService.CreateAsync(householdId, request.ToInput(), cancellationToken);
 
         return Created($"{Request.Path}/{bill.Id}", bill);
     }

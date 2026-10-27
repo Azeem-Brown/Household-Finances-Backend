@@ -43,7 +43,7 @@ public sealed class UserRepository : IUserRepository
     {
         // A read-only projection joined to Household for its name; the Household domain itself is
         // implemented by a later issue. Ordered by name so the response is deterministic.
-        var households = await (
+        List<Household> households = await (
                 from membership in _context.UserHouseholds
                 join household in _context.Households on membership.HouseholdId equals household.Id
                 where membership.UserId == userId

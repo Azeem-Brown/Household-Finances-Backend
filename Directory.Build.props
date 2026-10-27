@@ -1,0 +1,10 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Run the .editorconfig style analyzers during build, so an explicit-type violation fails the
+         build (issue #42) instead of only appearing in the editor. The test project opts out of that
+         specific rule in tests/.editorconfig. -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+</Project>

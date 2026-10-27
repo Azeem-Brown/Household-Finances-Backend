@@ -52,11 +52,11 @@ public sealed class ApiTokenService : IApiTokenService
     {
         ArgumentNullException.ThrowIfNull(user);
 
-        var issuedAt = DateTime.UtcNow;
-        var expiresAt = issuedAt.AddMinutes(_options.AccessTokenLifetimeMinutes);
-        var jti = Guid.NewGuid().ToString();
+        DateTime issuedAt = DateTime.UtcNow;
+        DateTime expiresAt = issuedAt.AddMinutes(_options.AccessTokenLifetimeMinutes);
+        string jti = Guid.NewGuid().ToString();
 
-        var token = CreateToken(user, _options.Audience, AccessTokenUse, jti, issuedAt, expiresAt);
+        string token = CreateToken(user, _options.Audience, AccessTokenUse, jti, issuedAt, expiresAt);
 
         return new ApiToken(token, expiresAt, jti);
     }
@@ -66,11 +66,11 @@ public sealed class ApiTokenService : IApiTokenService
     {
         ArgumentNullException.ThrowIfNull(user);
 
-        var issuedAt = DateTime.UtcNow;
-        var expiresAt = issuedAt.AddDays(_options.RefreshTokenLifetimeDays);
-        var jti = Guid.NewGuid().ToString();
+        DateTime issuedAt = DateTime.UtcNow;
+        DateTime expiresAt = issuedAt.AddDays(_options.RefreshTokenLifetimeDays);
+        string jti = Guid.NewGuid().ToString();
 
-        var token = CreateToken(user, _options.RefreshAudience, RefreshTokenUse, jti, issuedAt, expiresAt);
+        string token = CreateToken(user, _options.RefreshAudience, RefreshTokenUse, jti, issuedAt, expiresAt);
 
         return new ApiToken(token, expiresAt, jti);
     }
@@ -85,7 +85,7 @@ public sealed class ApiTokenService : IApiTokenService
             throw new InvalidRefreshTokenException("No refresh token was supplied.");
         }
 
-        var parameters = new TokenValidationParameters
+        TokenValidationParameters parameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidIssuer = _options.Issuer,
@@ -113,23 +113,23 @@ public sealed class ApiTokenService : IApiTokenService
             throw new InvalidRefreshTokenException("The refresh token failed validation.");
         }
 
-        var tokenUse = result.ClaimsIdentity.FindFirst(TokenUseClaimType)?.Value;
+        string? tokenUse = result.ClaimsIdentity.FindFirst(TokenUseClaimType)?.Value;
         if (!string.Equals(tokenUse, RefreshTokenUse, StringComparison.Ordinal))
         {
             throw new InvalidRefreshTokenException("The token is not a refresh token.");
         }
 
-        var subject = result.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+        string? subject = result.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
             ?? result.ClaimsIdentity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-        if (!Guid.TryParse(subject, out var userId))
+        if (!Guid.TryParse(subject, out Guid userId))
         {
             throw new InvalidRefreshTokenException("The refresh token has no valid user identifier.");
         }
 
         // The jti is required so the presented token can be matched to the row recorded at issue
         // time; a token without one cannot be enforced as single-use.
-        var jti = result.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;
+        string? jti = result.ClaimsIdentity.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;
         if (string.IsNullOrWhiteSpace(jti))
         {
             throw new InvalidRefreshTokenException("The refresh token has no valid identifier.");
@@ -146,9 +146,9 @@ public sealed class ApiTokenService : IApiTokenService
         DateTime issuedAt,
         DateTime expiresAt)
     {
-        var userId = user.Id.ToString();
+        string userId = user.Id.ToString();
 
-        var descriptor = new SecurityTokenDescriptor
+        SecurityTokenDescriptor descriptor = new SecurityTokenDescriptor
         {
             Issuer = _options.Issuer,
             Audience = audience,

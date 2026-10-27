@@ -1,0 +1,5 @@
+# The production rule in the repository root .editorconfig is not enforced for tests: the suite has
+# 1072 `var` declarations in its established style, and replacing them would bury the review of any
+# real change. Replacing them and deleting this override is the deferred task on issue #42.
+[*.cs]
+dotnet_diagnostic.IDE0008.severity = none

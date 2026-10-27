@@ -69,11 +69,11 @@ public sealed class GoalService : IGoalService
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        var validated = Validate(input);
-        var userId = ResolveCurrentUserId();
+        ValidatedGoal validated = Validate(input);
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var goal = new Goal
+        Goal goal = new Goal
         {
             Id = Guid.NewGuid(),
             Name = validated.Name,
@@ -99,10 +99,10 @@ public sealed class GoalService : IGoalService
         Guid householdId,
         CancellationToken cancellationToken = default)
     {
-        var userId = ResolveCurrentUserId();
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var goals = await _context.Goals
+        List<Goal> goals = await _context.Goals
             .Where(goal => goal.HouseholdId == householdId)
             .OrderBy(goal => goal.StartDate)
             .ThenBy(goal => goal.Name)
@@ -121,11 +121,11 @@ public sealed class GoalService : IGoalService
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        var validated = Validate(input);
-        var userId = ResolveCurrentUserId();
+        ValidatedGoal validated = Validate(input);
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var goal = await FindInHouseholdAsync(householdId, goalId, cancellationToken)
+        Goal goal = await FindInHouseholdAsync(householdId, goalId, cancellationToken)
             ?? throw new HouseholdFinancesException(ErrorCode.NotFound, goalId);
 
         goal.Name = validated.Name;
@@ -144,7 +144,7 @@ public sealed class GoalService : IGoalService
 
     private static ValidatedGoal Validate(GoalInput input)
     {
-        var trimmedName = input.Name?.Trim();
+        string? trimmedName = input.Name?.Trim();
         if (string.IsNullOrEmpty(trimmedName))
         {
             throw new HouseholdFinancesException(ErrorCode.InvalidInput, NameIdentifier);
@@ -180,7 +180,7 @@ public sealed class GoalService : IGoalService
 
     private async Task EnsureMemberAsync(Guid householdId, Guid userId, CancellationToken cancellationToken)
     {
-        var isMember = await _context.UserHouseholds.AnyAsync(
+        bool isMember = await _context.UserHouseholds.AnyAsync(
             membership => membership.HouseholdId == householdId && membership.UserId == userId,
             cancellationToken);
 
@@ -219,11 +219,11 @@ public sealed class GoalService : IGoalService
 
     private Guid ResolveCurrentUserId()
     {
-        var identifier = _currentUserService.UserIdentifier;
+        string? identifier = _currentUserService.UserIdentifier;
 
         if (!_currentUserService.IsAuthenticated
             || string.IsNullOrWhiteSpace(identifier)
-            || !Guid.TryParse(identifier, out var userId))
+            || !Guid.TryParse(identifier, out Guid userId))
         {
             // Defense in depth: the default authorization policy already rejects unauthenticated
             // requests with 401 before the action runs.

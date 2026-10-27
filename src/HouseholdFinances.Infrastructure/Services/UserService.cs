@@ -40,9 +40,9 @@ public sealed class UserService : IUserService
     /// <inheritdoc />
     public async Task<UserProfile> GetCurrentUserProfileAsync(CancellationToken cancellationToken = default)
     {
-        var userId = ResolveCurrentUserId();
+        Guid userId = ResolveCurrentUserId();
 
-        var user = await _repository.GetByIdAsync(userId, cancellationToken)
+        User user = await _repository.GetByIdAsync(userId, cancellationToken)
             ?? throw new HouseholdFinancesException(ErrorCode.NotFound, userId);
 
         return await BuildProfileAsync(user, cancellationToken);
@@ -53,15 +53,15 @@ public sealed class UserService : IUserService
         string? name,
         CancellationToken cancellationToken = default)
     {
-        var trimmedName = name?.Trim();
+        string? trimmedName = name?.Trim();
         if (string.IsNullOrEmpty(trimmedName))
         {
             throw new HouseholdFinancesException(ErrorCode.InvalidInput, NameIdentifier);
         }
 
-        var userId = ResolveCurrentUserId();
+        Guid userId = ResolveCurrentUserId();
 
-        var user = await _repository.GetByIdAsync(userId, cancellationToken)
+        User user = await _repository.GetByIdAsync(userId, cancellationToken)
             ?? throw new HouseholdFinancesException(ErrorCode.NotFound, userId);
 
         user.Name = trimmedName;
@@ -72,9 +72,9 @@ public sealed class UserService : IUserService
 
     private async Task<UserProfile> BuildProfileAsync(User user, CancellationToken cancellationToken)
     {
-        var households = await _repository.GetHouseholdsAsync(user.Id, cancellationToken);
+        IReadOnlyList<Household> households = await _repository.GetHouseholdsAsync(user.Id, cancellationToken);
 
-        var summaries = households
+        List<HouseholdSummary> summaries = households
             .Select(household => new HouseholdSummary(household.Id, household.Name))
             .ToList();
 
@@ -84,11 +84,11 @@ public sealed class UserService : IUserService
 
     private Guid ResolveCurrentUserId()
     {
-        var identifier = _currentUserService.UserIdentifier;
+        string? identifier = _currentUserService.UserIdentifier;
 
         if (!_currentUserService.IsAuthenticated
             || string.IsNullOrWhiteSpace(identifier)
-            || !Guid.TryParse(identifier, out var userId))
+            || !Guid.TryParse(identifier, out Guid userId))
         {
             // Defense in depth: the default authorization policy already rejects unauthenticated
             // requests with 401 before the action runs.
