@@ -54,8 +54,8 @@ public class GoogleAuthenticationApiTests : IDisposable
         Assert.NotNull(user);
         Assert.Equal("first@example.com", user!.Email);
         Assert.Equal("First User", user.Name);
-        // No local password is ever stored for a Google-provisioned user.
-        Assert.Null(user.Password);
+        // The account is keyed by the Google subject; there is no local credential of any kind.
+        Assert.Equal("google-sub-1", user.GoogleSubject);
     }
 
     [Fact]

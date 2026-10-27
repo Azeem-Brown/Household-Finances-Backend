@@ -51,8 +51,7 @@ public class UserServiceTests
 
         var profile = await service.GetCurrentUserProfileAsync();
 
-        // The read model has no password member, so it cannot be serialized even though the stored
-        // user carries a hash.
+        // The read model has no password member at all, so no credential can be serialized.
         Assert.Null(typeof(UserProfile).GetProperty("Password"));
 
         var json = JsonSerializer.Serialize(profile, new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -152,8 +151,7 @@ public class UserServiceTests
     {
         Id = UserId,
         Name = name,
-        Email = "alex@example.com",
-        Password = "unused-password-hash"
+        Email = "alex@example.com"
     };
 
     private static (UserService Service, FakeUserRepository Repository, StubCurrentUserService CurrentUser)

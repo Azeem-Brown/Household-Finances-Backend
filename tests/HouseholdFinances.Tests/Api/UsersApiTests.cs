@@ -81,7 +81,6 @@ public class UsersApiTests : IDisposable
 
         Assert.False(root.TryGetProperty("password", out _));
         Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("unused-hash", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -193,8 +192,7 @@ public class UsersApiTests : IDisposable
             {
                 Id = UserId,
                 Name = "Alex Doe",
-                Email = "alex@example.com",
-                Password = "unused-hash"
+                Email = "alex@example.com"
             });
             context.UserHouseholds.Add(new UserHousehold
             {

@@ -77,9 +77,7 @@ public sealed class AuthenticationService : IAuthenticationService
                 Id = Guid.NewGuid(),
                 Name = ResolveDisplayName(payload),
                 Email = ResolveEmail(payload),
-                GoogleSubject = payload.Subject,
-                // No local password: credentials are owned by Google.
-                Password = null,
+                GoogleSubject = payload.Subject
             };
 
             _userRepository.Add(user);

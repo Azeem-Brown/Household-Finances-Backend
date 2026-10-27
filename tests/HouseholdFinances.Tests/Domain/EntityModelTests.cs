@@ -5,20 +5,19 @@ namespace HouseholdFinances.Tests.Domain;
 public class EntityModelTests
 {
     [Fact]
-    public void Users_PasswordCanBeNull()
+    public void Users_GoogleSubjectCanBeNull()
     {
         var user = new User
         {
             Id = Guid.NewGuid(),
             Name = "Alex Doe",
-            Email = "alex@example.com",
-            Password = null
+            Email = "alex@example.com"
         };
 
         Assert.NotEqual(Guid.Empty, user.Id);
         Assert.Equal("Alex Doe", user.Name);
         Assert.Equal("alex@example.com", user.Email);
-        Assert.Null(user.Password);
+        Assert.Null(user.GoogleSubject);
     }
 
     [Fact]

@@ -18,10 +18,4 @@ public class User
     /// present, so one Google account maps to exactly one user.
     /// </summary>
     public string? GoogleSubject { get; set; }
-
-    /// <summary>
-    /// Retained to match the specification schema. Authentication is third party
-    /// (Google Identity), so this is unused and password hashes are never returned by the API.
-    /// </summary>
-    public string? Password { get; set; }
 }

@@ -99,7 +99,7 @@ public class HouseholdFinancesDbContextTests
             Assert.NotNull(user);
             Assert.False(user.FindProperty(nameof(User.Name))!.IsNullable);
             Assert.False(user.FindProperty(nameof(User.Email))!.IsNullable);
-            Assert.True(user.FindProperty(nameof(User.Password))!.IsNullable);
+            Assert.True(user.FindProperty(nameof(User.GoogleSubject))!.IsNullable);
 
             var item = model.FindEntityType(typeof(Item));
             Assert.NotNull(item);

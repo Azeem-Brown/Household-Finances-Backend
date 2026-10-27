@@ -26,9 +26,5 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         // NULLs in a unique index.
         builder.Property(user => user.GoogleSubject).HasMaxLength(255);
         builder.HasIndex(user => user.GoogleSubject).IsUnique();
-
-        // Retained for specification compatibility; null until third-party
-        // authentication is wired up.
-        builder.Property(user => user.Password);
     }
 }
