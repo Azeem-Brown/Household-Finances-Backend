@@ -49,6 +49,12 @@ builder.Services.AddHouseholdFinancesAuthentication(builder.Configuration, build
 // Resolves the authenticated user from the request principal for domain and API code.
 builder.Services.AddCurrentUserAccessor();
 
+// Throttles the anonymous authentication endpoints per client address. The limits come from
+// configuration (Authentication:RateLimiting) with conservative defaults, and only endpoints that
+// name a policy are throttled, so health, the service info endpoint, and the OpenAPI document are
+// unaffected.
+builder.Services.AddHouseholdFinancesRateLimiting(builder.Configuration);
+
 WebApplication app = builder.Build();
 
 // Report a schema that is behind the code. Migrations are applied by hand, so a merged migration
@@ -101,6 +107,10 @@ if (!app.Environment.IsDevelopment()
 // Global exception handling runs first so every later middleware and endpoint failure is
 // translated into a ProblemDetails response.
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// Applied before authentication so a throttled caller is rejected without doing any token work.
+// Only the endpoints whose actions name a policy are limited.
+app.UseRateLimiter();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

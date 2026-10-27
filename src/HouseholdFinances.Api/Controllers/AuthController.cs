@@ -2,6 +2,7 @@ using HouseholdFinances.Api.Authentication;
 using HouseholdFinances.Api.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace HouseholdFinances.Api.Controllers;
 
@@ -32,9 +33,11 @@ public sealed class AuthController : ControllerBase
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The API-issued token pair.</returns>
     [HttpPost("google")]
+    [EnableRateLimiting(AuthRateLimitPolicies.Google)]
     [ProducesResponseType(typeof(AuthenticationTokenResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<AuthenticationTokenResponse>> SignInWithGoogle(
         [FromBody] GoogleSignInRequest request,
         CancellationToken cancellationToken) =>
@@ -45,9 +48,11 @@ public sealed class AuthController : ControllerBase
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The API-issued token pair.</returns>
     [HttpPost("refresh")]
+    [EnableRateLimiting(AuthRateLimitPolicies.Refresh)]
     [ProducesResponseType(typeof(AuthenticationTokenResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<AuthenticationTokenResponse>> Refresh(
         [FromBody] RefreshTokenRequest request,
         CancellationToken cancellationToken) =>

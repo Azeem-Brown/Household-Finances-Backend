@@ -68,11 +68,14 @@ public class ErrorConventionTests
     {
         // Explicit numeric values keep the codes stable on the wire and match the sibling
         // frontend's categories (Unknown, NotFound, InvalidInput, Unauthorized, Conflict).
+        // TooManyRequests is additive: it takes the next free value without renumbering anything,
+        // and the frontend maps it to its own category in its own work.
         Assert.Equal(0, (int)ErrorCode.Unknown);
         Assert.Equal(1, (int)ErrorCode.NotFound);
         Assert.Equal(2, (int)ErrorCode.InvalidInput);
         Assert.Equal(3, (int)ErrorCode.Unauthorized);
         Assert.Equal(4, (int)ErrorCode.Conflict);
+        Assert.Equal(5, (int)ErrorCode.TooManyRequests);
 
         var expected = new[]
         {
@@ -80,7 +83,8 @@ public class ErrorConventionTests
             ErrorCode.NotFound,
             ErrorCode.InvalidInput,
             ErrorCode.Unauthorized,
-            ErrorCode.Conflict
+            ErrorCode.Conflict,
+            ErrorCode.TooManyRequests
         };
 
         Assert.Equal(expected, Enum.GetValues<ErrorCode>());
