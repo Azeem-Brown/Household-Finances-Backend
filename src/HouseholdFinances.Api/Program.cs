@@ -51,6 +51,22 @@ builder.Services.AddCurrentUserAccessor();
 
 WebApplication app = builder.Build();
 
+// Report a schema that is behind the code. Migrations are applied by hand, so a merged migration
+// can be missing from the database; without this the mismatch surfaces as a generic 500 on
+// whichever endpoint first touches a missing table. The check only reports: it applies nothing and
+// never blocks startup.
+try
+{
+    using IServiceScope migrationScope = app.Services.CreateScope();
+    HouseholdFinancesDbContext migrationContext =
+        migrationScope.ServiceProvider.GetRequiredService<HouseholdFinancesDbContext>();
+    PendingMigrationWarning.LogIfPending(PendingMigrationWarning.GetPending(migrationContext), app.Logger);
+}
+catch (Exception exception)
+{
+    app.Logger.LogWarning(exception, "The pending-migration check could not run.");
+}
+
 // Startup guard: the development Google token bypass opt-in must never be enabled outside
 // Development. Registration already scopes the bypass to Development and requires the opt-in;
 // this makes a misconfiguration fail fast and names the offending setting.
