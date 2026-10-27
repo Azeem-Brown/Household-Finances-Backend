@@ -22,23 +22,28 @@ public class RefreshTokenServiceTests
     private static readonly Guid UserId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid FamilyId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
-    // Fixture timestamps are relative to the wall clock because RefreshTokenService resolves expiry
-    // with DateTime.UtcNow. A fixed date here expired on 2026-10-19 and made every consume-based
-    // test fail with NotFound, so the fixture must not be pinned to a calendar date.
-    private static readonly DateTime Now = DateTime.UtcNow;
+    // The clock is pinned so expiry is evaluated at a controlled instant. The fixture used the wall
+    // clock before, so its tokens expired on 2026-10-19 and four tests began failing without any code
+    // change. A pinned instant also lets a test state an expiry boundary explicitly.
+    private static readonly DateTimeOffset PinnedNow = new(2026, 10, 27, 12, 0, 0, TimeSpan.Zero);
+    private static readonly FixedTimeProvider Clock = new(PinnedNow);
+    private static readonly DateTime Now = PinnedNow.UtcDateTime;
     private const string Jti = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
     [Fact]
-    public void Constructor_RejectsNullContext()
+    public void Constructor_RejectsNullDependencies()
     {
-        Assert.Throws<ArgumentNullException>(() => new RefreshTokenService(null!));
+        using var context = CreateContext(nameof(Constructor_RejectsNullDependencies));
+
+        Assert.Throws<ArgumentNullException>(() => new RefreshTokenService(null!, Clock));
+        Assert.Throws<ArgumentNullException>(() => new RefreshTokenService(context, null!));
     }
 
     [Fact]
     public async Task RecordIssuedAsync_RecordsTheTokenAndCreatesItsFamily()
     {
         await using var context = CreateContext(nameof(RecordIssuedAsync_RecordsTheTokenAndCreatesItsFamily));
-        var service = new RefreshTokenService(context);
+        var service = new RefreshTokenService(context, Clock);
 
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, Jti, FamilyId, Now, Now.AddDays(7)));
 
@@ -58,7 +63,7 @@ public class RefreshTokenServiceTests
     public async Task RecordIssuedAsync_ReusesAnExistingFamily()
     {
         await using var context = CreateContext(nameof(RecordIssuedAsync_ReusesAnExistingFamily));
-        var service = new RefreshTokenService(context);
+        var service = new RefreshTokenService(context, Clock);
 
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, Jti, FamilyId, Now, Now.AddDays(7)));
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, "next-jti", FamilyId, Now, Now.AddDays(7)));
@@ -71,7 +76,7 @@ public class RefreshTokenServiceTests
     public async Task ConsumeAsync_FirstUse_ConsumesTheToken()
     {
         await using var context = CreateContext(nameof(ConsumeAsync_FirstUse_ConsumesTheToken));
-        var service = new RefreshTokenService(context);
+        var service = new RefreshTokenService(context, Clock);
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, Jti, FamilyId, Now, Now.AddDays(7)));
 
         var result = await service.ConsumeAsync(UserId, Jti);
@@ -85,7 +90,7 @@ public class RefreshTokenServiceTests
     public async Task ConsumeAsync_SecondUse_ReportsReused()
     {
         await using var context = CreateContext(nameof(ConsumeAsync_SecondUse_ReportsReused));
-        var service = new RefreshTokenService(context);
+        var service = new RefreshTokenService(context, Clock);
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, Jti, FamilyId, Now, Now.AddDays(7)));
 
         await service.ConsumeAsync(UserId, Jti);
@@ -99,7 +104,7 @@ public class RefreshTokenServiceTests
     public async Task ConsumeAsync_UnknownJti_ReportsNotFound()
     {
         await using var context = CreateContext(nameof(ConsumeAsync_UnknownJti_ReportsNotFound));
-        var service = new RefreshTokenService(context);
+        var service = new RefreshTokenService(context, Clock);
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, Jti, FamilyId, Now, Now.AddDays(7)));
 
         var result = await service.ConsumeAsync(UserId, "not-a-recorded-jti");
@@ -112,7 +117,7 @@ public class RefreshTokenServiceTests
     public async Task ConsumeAsync_ForAnotherUser_ReportsNotFound()
     {
         await using var context = CreateContext(nameof(ConsumeAsync_ForAnotherUser_ReportsNotFound));
-        var service = new RefreshTokenService(context);
+        var service = new RefreshTokenService(context, Clock);
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, Jti, FamilyId, Now, Now.AddDays(7)));
 
         var result = await service.ConsumeAsync(Guid.NewGuid(), Jti);
@@ -131,18 +136,48 @@ public class RefreshTokenServiceTests
             UserId = UserId,
             FamilyId = FamilyId,
             Jti = Jti,
-            IssuedAtUtc = DateTime.UtcNow.AddDays(-10),
-            ExpiresAtUtc = DateTime.UtcNow.AddDays(-3),
+            IssuedAtUtc = Now.AddDays(-10),
+            ExpiresAtUtc = Now.AddDays(-3),
             Consumed = false,
         });
         await context.SaveChangesAsync();
-        var service = new RefreshTokenService(context);
+        var service = new RefreshTokenService(context, Clock);
 
         var result = await service.ConsumeAsync(UserId, Jti);
 
         Assert.Equal(RefreshTokenConsumeOutcome.NotFound, result.Outcome);
         // The expired row was not consumed.
         Assert.False((await context.RefreshTokens.SingleAsync()).Consumed);
+    }
+
+    [Theory]
+    [InlineData(1, RefreshTokenConsumeOutcome.Consumed)]
+    [InlineData(-1, RefreshTokenConsumeOutcome.NotFound)]
+    public async Task ConsumeAsync_EvaluatesExpiryAgainstTheInjectedClock(
+        int secondsFromPinnedNow,
+        RefreshTokenConsumeOutcome expected)
+    {
+        // The token sits one second inside, or one second past, the pinned instant. The wall clock
+        // plays no part, so the boundary is explicit rather than relative to when the test runs.
+        await using var context = CreateContext(
+            $"{nameof(ConsumeAsync_EvaluatesExpiryAgainstTheInjectedClock)}_{secondsFromPinnedNow}");
+        context.RefreshTokenFamilies.Add(new RefreshTokenFamily { Id = FamilyId, UserId = UserId, Revoked = false });
+        context.RefreshTokens.Add(new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = UserId,
+            FamilyId = FamilyId,
+            Jti = Jti,
+            IssuedAtUtc = Now.AddDays(-1),
+            ExpiresAtUtc = Now.AddSeconds(secondsFromPinnedNow),
+            Consumed = false,
+        });
+        await context.SaveChangesAsync();
+        var service = new RefreshTokenService(context, Clock);
+
+        var result = await service.ConsumeAsync(UserId, Jti);
+
+        Assert.Equal(expected, result.Outcome);
     }
 
     [Fact]
@@ -160,7 +195,7 @@ public class RefreshTokenServiceTests
             Consumed = false,
         });
         await context.SaveChangesAsync();
-        var service = new RefreshTokenService(context);
+        var service = new RefreshTokenService(context, Clock);
 
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, Jti, FamilyId, Now, Now.AddDays(7)));
 
@@ -173,7 +208,7 @@ public class RefreshTokenServiceTests
     public async Task RevokeFamilyAsync_RevokesTheFamilyAndRejectsItsTokens()
     {
         await using var context = CreateContext(nameof(RevokeFamilyAsync_RevokesTheFamilyAndRejectsItsTokens));
-        var service = new RefreshTokenService(context);
+        var service = new RefreshTokenService(context, Clock);
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, Jti, FamilyId, Now, Now.AddDays(7)));
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, "other-jti", FamilyId, Now, Now.AddDays(7)));
 
@@ -190,7 +225,7 @@ public class RefreshTokenServiceTests
     public async Task RevokeFamilyAsync_IsIdempotent()
     {
         await using var context = CreateContext(nameof(RevokeFamilyAsync_IsIdempotent));
-        var service = new RefreshTokenService(context);
+        var service = new RefreshTokenService(context, Clock);
         await service.RecordIssuedAsync(new RefreshTokenIssue(UserId, Jti, FamilyId, Now, Now.AddDays(7)));
 
         await service.RevokeFamilyAsync(FamilyId);
@@ -207,14 +242,14 @@ public class RefreshTokenServiceTests
 
         await using (var seedContext = CreateContext(databaseName))
         {
-            await new RefreshTokenService(seedContext)
+            await new RefreshTokenService(seedContext, Clock)
                 .RecordIssuedAsync(new RefreshTokenIssue(UserId, Jti, FamilyId, Now, Now.AddDays(7)));
         }
 
         await using var firstContext = CreateContext(databaseName);
         await using var secondContext = CreateContext(databaseName);
-        var first = new RefreshTokenService(firstContext);
-        var second = new RefreshTokenService(secondContext);
+        var first = new RefreshTokenService(firstContext, Clock);
+        var second = new RefreshTokenService(secondContext, Clock);
 
         var results = await Task.WhenAll(
             first.ConsumeAsync(UserId, Jti),

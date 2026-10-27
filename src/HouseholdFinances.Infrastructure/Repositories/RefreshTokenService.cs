@@ -14,12 +14,18 @@ namespace HouseholdFinances.Infrastructure.Repositories;
 public sealed class RefreshTokenService : IRefreshTokenService
 {
     private readonly HouseholdFinancesDbContext _context;
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>Creates the service over the supplied context.</summary>
     /// <param name="context">The EF Core context for the household finances schema.</param>
-    public RefreshTokenService(HouseholdFinancesDbContext context)
+    /// <param name="timeProvider">
+    /// Supplies the UTC clock used to evaluate expiry, so a test can pin the instant instead of
+    /// depending on the wall clock. The host registers <see cref="TimeProvider.System"/>.
+    /// </param>
+    public RefreshTokenService(HouseholdFinancesDbContext context, TimeProvider timeProvider)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     /// <inheritdoc />
@@ -75,7 +81,7 @@ public sealed class RefreshTokenService : IRefreshTokenService
         string jti,
         CancellationToken cancellationToken = default)
     {
-        DateTime now = DateTime.UtcNow;
+        DateTime now = _timeProvider.GetUtcNow().UtcDateTime;
 
         // Expired rows are excluded on lookup, so an expired token is never honoured.
         RefreshToken? token = await _context.RefreshTokens.FirstOrDefaultAsync(
