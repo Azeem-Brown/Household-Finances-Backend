@@ -169,6 +169,28 @@ public class GoalServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_NonRecurringGoalWithAnInterval_ClearsTheInterval()
+    {
+        await using var context = CreateContext(nameof(CreateAsync_NonRecurringGoalWithAnInterval_ClearsTheInterval));
+        SeedMembership(context, HouseholdId, UserId);
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        // A cadence on a non-recurring goal used to be persisted as-is, which no consumer could tell
+        // apart from a corrupt row. The service now clears it, so storage has one representation.
+        var detail = await service.CreateAsync(
+            HouseholdId,
+            new GoalInput("One-off deposit", 500.00, Start, End, false, Interval.Weekly, 0));
+
+        Assert.False(detail.Recurring);
+        Assert.Null(detail.Interval);
+
+        var goal = Assert.Single(await service.ListAsync(HouseholdId));
+        Assert.False(goal.Recurring);
+        Assert.Null(goal.Interval);
+    }
+
+    [Fact]
     public async Task CreateAsync_RecurringGoalRoundTripsItsInterval()
     {
         await using var context = CreateContext(nameof(CreateAsync_RecurringGoalRoundTripsItsInterval));
@@ -323,6 +345,42 @@ public class GoalServiceTests
             HouseholdId,
             goalId,
             new GoalInput("One-off deposit", 500.00, Start, End, false, null, 500.00));
+
+        Assert.False(detail.Recurring);
+        Assert.Null(detail.Interval);
+
+        var goal = Assert.Single(await service.ListAsync(HouseholdId));
+        Assert.Null(goal.Interval);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RecurringGoalChangedToOneOffWithAnInterval_ClearsTheInterval()
+    {
+        await using var context = CreateContext(nameof(UpdateAsync_RecurringGoalChangedToOneOffWithAnInterval_ClearsTheInterval));
+        SeedMembership(context, HouseholdId, UserId);
+        var goalId = Guid.NewGuid();
+        context.Goals.Add(new Goal
+        {
+            Id = goalId,
+            Name = "Emergency Fund",
+            Value = 10000.00,
+            StartDate = Start,
+            EndDate = End,
+            Recurring = true,
+            Interval = Interval.Monthly,
+            HouseholdId = HouseholdId,
+            UserId = UserId,
+            Total = 500.00
+        });
+        await context.SaveChangesAsync();
+        var service = CreateService(context);
+
+        // The client keeps the old cadence while switching to one-off; it must not be stored, or
+        // flipping Recurring back later would silently revive it.
+        var detail = await service.UpdateAsync(
+            HouseholdId,
+            goalId,
+            new GoalInput("One-off deposit", 500.00, Start, End, false, Interval.Monthly, 500.00));
 
         Assert.False(detail.Recurring);
         Assert.Null(detail.Interval);

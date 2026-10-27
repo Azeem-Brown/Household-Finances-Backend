@@ -13,6 +13,15 @@ namespace HouseholdFinances.Domain.Models;
 /// <see cref="Recurring"/> is true.
 /// </para>
 /// <para>
+/// <b>One-off classification.</b> The service clears a supplied interval to <see langword="null"/>
+/// whenever <see cref="Recurring"/> is false, so a non-recurring goal always stores no cadence and
+/// has exactly one occurrence, on <see cref="StartDate"/>. A recurring goal expands occurrences from
+/// <see cref="StartDate"/> by <see cref="Interval"/> until <see cref="EndDate"/> inclusive, stepping
+/// +1 day, +7 days, +14 days, +1 month, +3 months, or +1 year, anchored to the original start date.
+/// Dates are UTC calendar dates, so time of day is ignored.
+/// </para>
+/// <para>
+/// <see cref="Value"/> is the target amount and is never multiplied by the number of occurrences.
 /// <see cref="Total"/> is the amount contributed toward the goal so far. It defaults to 0 when a goal
 /// is created (the service forces this) and is changed only through the update operation.
 /// </para>

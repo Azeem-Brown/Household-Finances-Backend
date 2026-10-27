@@ -22,8 +22,24 @@ namespace HouseholdFinances.Domain.Abstractions;
 /// </para>
 /// <para>
 /// <b>Recurrence.</b> Goals are persisted and returned raw. Occurrences are not expanded on the
-/// server; the frontend expands them from <c>StartDate</c> by <c>Interval</c> until <c>EndDate</c>
-/// (inclusive) and computes the projection.
+/// server; the frontend expands them (see the occurrence helper on frontend issue #49) from
+/// <c>StartDate</c> by <c>Interval</c> until <c>EndDate</c> (inclusive) and computes the projection.
+/// The rule is the one approved for Income, Bills, and Goals by decision #5: occurrences are
+/// <c>StartDate</c>, then <c>StartDate</c> stepped by one interval at a time while the occurrence is
+/// on or before <c>EndDate</c>; stepping is +1 day, +7 days, +14 days, +1 month, +3 months, or +1
+/// year, anchored to the original <c>StartDate</c>; dates are UTC calendar dates, so time of day is
+/// ignored; an entry whose <c>EndDate</c> precedes its <c>StartDate</c> produces no occurrences.
+/// </para>
+/// <para>
+/// <b>Storage.</b> A goal has exactly one representation per kind: a recurring goal stores its
+/// cadence, and a one-off goal stores no cadence. The service clears a supplied interval to null
+/// whenever the goal is not recurring, and rejects a recurring goal without one. A one-off goal
+/// therefore has exactly one occurrence, on <c>StartDate</c>.
+/// </para>
+/// <para>
+/// <b>Money.</b> <c>Value</c> is the goal's target amount and is never multiplied by the number of
+/// occurrences. <c>Total</c> is the amount contributed so far and does not depend on occurrence
+/// dates. Goals do not contribute to a household's incomes or payments.
 /// </para>
 /// </remarks>
 public interface IGoalService

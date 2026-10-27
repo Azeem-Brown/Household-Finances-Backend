@@ -165,16 +165,21 @@ public sealed class GoalService : IGoalService
             throw new HouseholdFinancesException(ErrorCode.InvalidInput, IntervalIdentifier);
         }
 
-        // Money is USD with two decimal places, half-up (recorded decision). A non-recurring goal
-        // carries no cadence and is stored as NULL; a recurring goal keeps the interval that the
-        // check above required. This matches the Income and Bill domains so the three stay consistent.
+        // Normalise the cadence to the one representation the contract allows: a recurring goal keeps
+        // the interval the check above required, and a one-off goal stores NULL. Without this a
+        // client could store a cadence on a non-recurring goal; no consumer could tell that apart
+        // from a corrupt row, and flipping Recurring later would silently revive it.
+        Interval? interval = input.Recurring ? input.Interval : null;
+
+        // Money is USD with two decimal places, half-up (recorded decision). This matches the Income
+        // and Bill domains so the three stay consistent.
         return new ValidatedGoal(
             trimmedName,
             RoundMoney(input.Value),
             input.StartDate,
             input.EndDate,
             input.Recurring,
-            input.Interval,
+            interval,
             RoundMoney(input.Total));
     }
 
