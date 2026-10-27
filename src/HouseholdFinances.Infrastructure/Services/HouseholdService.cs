@@ -31,6 +31,18 @@ public sealed class HouseholdService : IHouseholdService
     public const string CurrentUserIdentifier = "me";
 
     /// <summary>
+    /// Identifier reported when a user who did not create a household tries to delete it. The
+    /// household is left untouched; the member can leave instead.
+    /// </summary>
+    public const string CreatorIdentifier = "Creator";
+
+    /// <summary>
+    /// Identifier reported when a creator tries to delete a household that other members still
+    /// belong to. Deleting would remove their data without their consent.
+    /// </summary>
+    public const string MemberCountIdentifier = "MemberCount";
+
+    /// <summary>
     /// Identifier of significance reported when an upload carries no readable image. The error
     /// convention is <c>&lt;enum&gt; &lt;identifier&gt;</c>, so the identifier names the field that
     /// failed validation.
@@ -96,7 +108,8 @@ public sealed class HouseholdService : IHouseholdService
         Household household = new Household
         {
             Id = Guid.NewGuid(),
-            Name = trimmedName
+            Name = trimmedName,
+            CreatedByUserId = userId
         };
 
         // Enforce the one-membership-per-user/household invariant in the application layer. This
@@ -127,7 +140,9 @@ public sealed class HouseholdService : IHouseholdService
             cancellationToken);
         HouseholdEntryCounts entryCounts = await _repository.GetEntryCountsAsync(household.Id, cancellationToken);
 
-        return ToDetail(household, totals, entryCounts);
+        // The creator has just been made the household's only member, so the counts are known
+        // without another read.
+        return ToDetail(household, totals, entryCounts, userId, memberCount: 1);
     }
 
     /// <inheritdoc />
@@ -147,7 +162,8 @@ public sealed class HouseholdService : IHouseholdService
         {
             HouseholdTotals totals = await _repository.GetTotalsAsync(household.Id, window, cancellationToken);
             HouseholdEntryCounts entryCounts = await _repository.GetEntryCountsAsync(household.Id, cancellationToken);
-            details.Add(ToDetail(household, totals, entryCounts));
+            int memberCount = await _repository.CountMembersAsync(household.Id, cancellationToken);
+            details.Add(ToDetail(household, totals, entryCounts, userId, memberCount));
         }
 
         return details;
@@ -174,8 +190,57 @@ public sealed class HouseholdService : IHouseholdService
         // Deliberately read without the window: the counts describe the household's entries, not
         // the occurrences inside the requested period.
         HouseholdEntryCounts entryCounts = await _repository.GetEntryCountsAsync(householdId, cancellationToken);
+        int memberCount = await _repository.CountMembersAsync(householdId, cancellationToken);
 
-        return ToDetail(household, totals, entryCounts);
+        return ToDetail(household, totals, entryCounts, userId, memberCount);
+    }
+
+    /// <inheritdoc />
+    public async Task LeaveAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        Guid userId = ResolveCurrentUserId();
+
+        // A household the user does not belong to is reported as not found, so leaving cannot be
+        // used to discover another user's household.
+        Household household = await _repository.GetForMemberAsync(householdId, userId, cancellationToken)
+            ?? throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
+
+        // The household and its bills, goals, items, and logo stay for the remaining members. A
+        // creator who leaves does not hand ownership on, so the household becomes delete-locked
+        // rather than silently transferring the right to delete it.
+        if (!await _repository.RemoveMembershipAsync(household.Id, userId, cancellationToken))
+        {
+            throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
+        }
+
+        await _repository.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteAsync(Guid householdId, CancellationToken cancellationToken = default)
+    {
+        Guid userId = ResolveCurrentUserId();
+
+        Household household = await _repository.GetForMemberAsync(householdId, userId, cancellationToken)
+            ?? throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
+
+        // Deleting is the creator's decision, because it removes the household for everyone still in
+        // it. Removing just the caller's membership is what LeaveAsync is for.
+        if (household.CreatedByUserId != userId)
+        {
+            throw new HouseholdFinancesException(ErrorCode.Conflict, CreatorIdentifier);
+        }
+
+        // Other members would lose data they did not choose to lose, so the creator can only delete
+        // a household they are the only member of.
+        int memberCount = await _repository.CountMembersAsync(householdId, cancellationToken);
+        if (memberCount > 1)
+        {
+            throw new HouseholdFinancesException(ErrorCode.Conflict, MemberCountIdentifier);
+        }
+
+        await _repository.RemoveAsync(household, cancellationToken);
+        await _repository.SaveChangesAsync(cancellationToken);
     }
 
     private PeriodWindow CurrentWindow(Interval period) =>
@@ -184,14 +249,18 @@ public sealed class HouseholdService : IHouseholdService
     private static HouseholdDetail ToDetail(
         Household household,
         HouseholdTotals totals,
-        HouseholdEntryCounts entryCounts) =>
+        HouseholdEntryCounts entryCounts,
+        Guid userId,
+        int memberCount) =>
         new(
             household.Id,
             household.Name,
             RoundMoney(totals.Incomes),
             RoundMoney(totals.Payments),
             entryCounts.Incomes,
-            entryCounts.Bills);
+            entryCounts.Bills,
+            household.CreatedByUserId == userId,
+            memberCount);
     /// <inheritdoc />
     public async Task SetLogoAsync(
         Guid householdId,

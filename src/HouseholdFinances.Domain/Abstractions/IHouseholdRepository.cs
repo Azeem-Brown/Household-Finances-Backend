@@ -86,6 +86,39 @@ public interface IHouseholdRepository
     Task AddMembershipAsync(UserHousehold membership, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Counts the users who currently belong to the household. Used to decide whether a household
+    /// can be deleted (a creator must be its only member) and to report the member count to clients.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>The number of membership rows for the household.</returns>
+    Task<int> CountMembersAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks the supplied user's membership of the household for removal. Changes are tracked only;
+    /// call <see cref="SaveChangesAsync"/> to persist them. The household and its data are left
+    /// untouched, so the remaining members keep them.
+    /// </summary>
+    /// <param name="householdId">The household's identifier.</param>
+    /// <param name="userId">The member leaving.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns><c>true</c> when a membership was marked for removal; <c>false</c> when there was none.</returns>
+    Task<bool> RemoveMembershipAsync(
+        Guid householdId,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks the household for removal. Its bills, goals, items, logo, and memberships are removed
+    /// with it by the configured cascades; income entries are not, because they belong to the user
+    /// rather than the household. Changes are tracked only; call <see cref="SaveChangesAsync"/> to
+    /// persist them.
+    /// </summary>
+    /// <param name="household">The household to remove.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    Task RemoveAsync(Household household, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reads a household's logo, or <c>null</c> when the household has none. This does not check
     /// membership: the caller is expected to resolve the household for the current user first, so
     /// the membership boundary stays in one place.

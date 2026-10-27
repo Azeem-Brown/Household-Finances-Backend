@@ -24,10 +24,19 @@ namespace HouseholdFinances.Domain.Models;
 /// <param name="BillEntryCount">
 /// Number of stored bill entries recorded against the household, regardless of the window.
 /// </param>
+/// <param name="IsCreator">
+/// Whether the current user created the household. Only the creator may delete it.
+/// </param>
+/// <param name="MemberCount">
+/// Number of users who currently belong to the household. A creator may only delete a household
+/// they are the sole member of, so this tells a client when deletion is unavailable.
+/// </param>
 public sealed record HouseholdDetail(
     Guid Id,
     string Name,
     double Incomes,
     double Payments,
     int IncomeEntryCount,
-    int BillEntryCount);
+    int BillEntryCount,
+    bool IsCreator,
+    int MemberCount);

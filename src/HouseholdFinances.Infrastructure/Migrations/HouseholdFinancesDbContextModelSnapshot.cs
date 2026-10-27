@@ -111,6 +111,9 @@ namespace HouseholdFinances.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("char(36)");
+
                     b.Property<double>("Incomes")
                         .HasColumnType("double");
 
@@ -122,6 +125,8 @@ namespace HouseholdFinances.Infrastructure.Migrations
                         .HasColumnType("double");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
 
                     b.ToTable("Household", (string)null);
                 });
@@ -348,6 +353,14 @@ namespace HouseholdFinances.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("HouseholdFinances.Domain.Entities.Household", b =>
+                {
+                    b.HasOne("HouseholdFinances.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("HouseholdFinances.Domain.Entities.HouseholdLogo", b =>
