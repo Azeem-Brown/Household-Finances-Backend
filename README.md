@@ -35,16 +35,16 @@ added by later work.
 Recorded conventions for the HTTP surface (issue #5). They are applied in code and described
 in the generated OpenAPI document so new endpoints stay consistent.
 
-| Concern | Convention |
-| --- | --- |
-| Style | REST over JSON. |
+| Concern      | Convention                                                                                                                                                                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Style        | REST over JSON.                                                                                                                                                                                                                                 |
 | Route prefix | Every controller route is served under `/api/v1`. `ApiRoutePrefixConvention` applies the prefix and is idempotent, so a controller may declare `[Route("households")]` or `[Route("api/v1/households")]` and both produce `/api/v1/households`. |
-| Casing | JSON property names are camelCase and are matched case-insensitively when read. |
-| Enums | Serialized as their numeric values (for example `Interval.Monthly` is `3`). The sibling frontend mirrors these values, so a string enum converter must not be added without a coordinated frontend change. |
-| Date-times | UTC, ISO 8601 round-trip (for example `2026-01-02T03:04:05.0000000Z`). `UtcDateTimeJsonConverter` normalizes values to UTC on both read and write. |
-| Money | A JSON number (`double`) in USD, rounded to two decimal places. |
-| Identifiers | GUIDs. |
-| CORS | Not configured: the Blazor Server frontend calls the API server-to-server. |
+| Casing       | JSON property names are camelCase and are matched case-insensitively when read.                                                                                                                                                                 |
+| Enums        | Serialized as their numeric values (for example `Interval.Monthly` is `3`). The sibling frontend mirrors these values, so a string enum converter must not be added without a coordinated frontend change.                                      |
+| Date-times   | UTC, ISO 8601 round-trip (for example `2026-01-02T03:04:05.0000000Z`). `UtcDateTimeJsonConverter` normalizes values to UTC on both read and write.                                                                                              |
+| Money        | A JSON number (`double`) in USD, rounded to two decimal places.                                                                                                                                                                                 |
+| Identifiers  | GUIDs.                                                                                                                                                                                                                                          |
+| CORS         | Not configured: the Blazor Server frontend calls the API server-to-server.                                                                                                                                                                      |
 
 A new domain controller follows this shape. The `/api/v1` prefix is applied automatically, so
 the controller only declares its own resource segment:
@@ -87,10 +87,11 @@ principal through `ICurrentUserService`; no endpoint accepts a user id from the 
 - `PATCH /api/v1/users/me` updates the current user's display name from a `{ "name": "..." }`
   body and returns the updated profile.
 
-Both endpoints require an authenticated caller. The password/hash is never returned: the response
-is the `UserProfile` read model, which has no password member. A blank or whitespace-only name is
-rejected with `InvalidInput Name` (HTTP 400), an unknown user with `NotFound <id>` (HTTP 404), and
-an unresolvable caller with `Unauthorized me` (HTTP 401), all using the error convention.
+Both endpoints require an authenticated caller. Credentials are owned by Google Identity, so the
+`Users` table has no password column and the `UserProfile` read model has no password member; there
+is nothing to return. A blank or whitespace-only name is rejected with `InvalidInput Name` (HTTP
+400), an unknown user with `NotFound <id>` (HTTP 404), and an unresolvable caller with
+`Unauthorized me` (HTTP 401), all using the error convention.
 
 ## Authentication and authorization
 
@@ -354,7 +355,7 @@ credential-free placeholder.
 - **Migrations not applied (for example "Table 'household_finances.users' doesn't exist").**
   Run `dotnet ef database update` (see [Local development database](#local-development-database)).
   List applied migrations with `dotnet ef migrations list --project
-  src/HouseholdFinances.Infrastructure`.
+src/HouseholdFinances.Infrastructure`.
 - **Host port 3306 already in use ("bind: address already in use").** Port 3306 is the MySQL
   default, and a native MySQL service already occupies it. Either stop the native service
   before `docker compose up -d`, or remap the published port in `compose.yaml` (for example
