@@ -253,6 +253,10 @@ dotnet tool install --global dotnet-ef --version 9.0.0
 dotnet ef database update --project src/HouseholdFinances.Infrastructure --startup-project src/HouseholdFinances.Api
 ```
 
+Migrations are applied by hand, so a merged migration can be missing from a running database. The
+API therefore logs a warning at startup naming every pending migration, and logs that the check
+could not run when the database is unreachable. It never applies a migration itself.
+
 ### 4. Run the API against the database
 
 ```powershell
