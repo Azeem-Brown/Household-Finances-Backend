@@ -14,15 +14,6 @@ namespace HouseholdFinances.Api.Errors;
 /// </summary>
 public sealed class ExceptionHandlingMiddleware
 {
-    private const string ProblemJsonContentType = "application/problem+json";
-
-    // Deterministic camelCase output. Null members (for example an absent detail) are omitted so
-    // unexpected failures never expose a message.
-    private static readonly JsonSerializerOptions ProblemJsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
     private readonly RequestDelegate _next;
     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
 
@@ -102,11 +93,6 @@ public sealed class ExceptionHandlingMiddleware
         await WriteProblemAsync(context, status, problem);
     }
 
-    private static async Task WriteProblemAsync(HttpContext context, int status, ProblemDetails problem)
-    {
-        context.Response.StatusCode = status;
-        context.Response.ContentType = ProblemJsonContentType;
-
-        await context.Response.WriteAsJsonAsync(problem, ProblemJsonOptions, ProblemJsonContentType);
-    }
+    private static async Task WriteProblemAsync(HttpContext context, int status, ProblemDetails problem) =>
+        await ProblemResponse.WriteAsync(context, status, problem);
 }

@@ -15,6 +15,7 @@ public static class ErrorStatusMapper
         ErrorCode.InvalidInput => StatusCodes.Status400BadRequest,
         ErrorCode.Unauthorized => StatusCodes.Status401Unauthorized,
         ErrorCode.Conflict => StatusCodes.Status409Conflict,
+        ErrorCode.TooManyRequests => StatusCodes.Status429TooManyRequests,
         _ => StatusCodes.Status500InternalServerError
     };
 
@@ -25,6 +26,7 @@ public static class ErrorStatusMapper
         ErrorCode.InvalidInput => "Invalid Input",
         ErrorCode.Unauthorized => "Unauthorized",
         ErrorCode.Conflict => "Conflict",
+        ErrorCode.TooManyRequests => "Too Many Requests",
         _ => "An unexpected error occurred."
     };
 }

@@ -21,5 +21,12 @@ public enum ErrorCode
     Unauthorized = 3,
 
     /// <summary>The requested change conflicts with the current state. Numeric value 4.</summary>
-    Conflict = 4
+    Conflict = 4,
+
+    /// <summary>
+    /// The caller sent too many requests in the allowed window and is being throttled. Numeric
+    /// value 5. Additive: the existing members keep their values so a client can map this without
+    /// renumbering anything.
+    /// </summary>
+    TooManyRequests = 5
 }
