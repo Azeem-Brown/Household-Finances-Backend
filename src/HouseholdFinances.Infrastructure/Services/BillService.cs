@@ -62,11 +62,11 @@ public sealed class BillService : IBillService
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        var validated = Validate(input);
-        var userId = ResolveCurrentUserId();
+        ValidatedBill validated = Validate(input);
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var bill = new Bill
+        Bill bill = new Bill
         {
             Id = Guid.NewGuid(),
             Name = validated.Name,
@@ -90,10 +90,10 @@ public sealed class BillService : IBillService
         Guid householdId,
         CancellationToken cancellationToken = default)
     {
-        var userId = ResolveCurrentUserId();
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var bills = await _context.Bills
+        List<Bill> bills = await _context.Bills
             .Where(bill => bill.HouseholdId == householdId)
             .OrderBy(bill => bill.StartDate)
             .ThenBy(bill => bill.Name)
@@ -112,11 +112,11 @@ public sealed class BillService : IBillService
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        var validated = Validate(input);
-        var userId = ResolveCurrentUserId();
+        ValidatedBill validated = Validate(input);
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var bill = await FindInHouseholdAsync(householdId, billId, cancellationToken)
+        Bill bill = await FindInHouseholdAsync(householdId, billId, cancellationToken)
             ?? throw new HouseholdFinancesException(ErrorCode.NotFound, billId);
 
         bill.Name = validated.Name;
@@ -138,10 +138,10 @@ public sealed class BillService : IBillService
         Guid billId,
         CancellationToken cancellationToken = default)
     {
-        var userId = ResolveCurrentUserId();
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var bill = await FindInHouseholdAsync(householdId, billId, cancellationToken)
+        Bill bill = await FindInHouseholdAsync(householdId, billId, cancellationToken)
             ?? throw new HouseholdFinancesException(ErrorCode.NotFound, billId);
 
         _context.Bills.Remove(bill);
@@ -150,7 +150,7 @@ public sealed class BillService : IBillService
 
     private static ValidatedBill Validate(BillInput input)
     {
-        var trimmedName = input.Name?.Trim();
+        string? trimmedName = input.Name?.Trim();
         if (string.IsNullOrEmpty(trimmedName))
         {
             throw new HouseholdFinancesException(ErrorCode.InvalidInput, NameIdentifier);
@@ -185,7 +185,7 @@ public sealed class BillService : IBillService
 
     private async Task EnsureMemberAsync(Guid householdId, Guid userId, CancellationToken cancellationToken)
     {
-        var isMember = await _context.UserHouseholds.AnyAsync(
+        bool isMember = await _context.UserHouseholds.AnyAsync(
             membership => membership.HouseholdId == householdId && membership.UserId == userId,
             cancellationToken);
 
@@ -223,11 +223,11 @@ public sealed class BillService : IBillService
 
     private Guid ResolveCurrentUserId()
     {
-        var identifier = _currentUserService.UserIdentifier;
+        string? identifier = _currentUserService.UserIdentifier;
 
         if (!_currentUserService.IsAuthenticated
             || string.IsNullOrWhiteSpace(identifier)
-            || !Guid.TryParse(identifier, out var userId))
+            || !Guid.TryParse(identifier, out Guid userId))
         {
             // Defense in depth: the default authorization policy already rejects unauthenticated
             // requests with 401 before the action runs.

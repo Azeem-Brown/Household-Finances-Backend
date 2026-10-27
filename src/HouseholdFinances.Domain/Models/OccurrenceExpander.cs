@@ -46,8 +46,8 @@ public static class OccurrenceExpander
         Interval? interval,
         PeriodWindow window)
     {
-        var start = DateOnly.FromDateTime(startDate);
-        var end = DateOnly.FromDateTime(endDate);
+        DateOnly start = DateOnly.FromDateTime(startDate);
+        DateOnly end = DateOnly.FromDateTime(endDate);
 
         // An entry whose EndDate precedes its StartDate produces no occurrences, even when its
         // StartDate lies inside the window.
@@ -72,13 +72,13 @@ public static class OccurrenceExpander
         Interval interval,
         PeriodWindow window)
     {
-        var occurrences = new List<DateOnly>();
+        List<DateOnly> occurrences = new List<DateOnly>();
 
         // Jump straight to the first occurrence at or after the window start. The series is never
         // walked one day at a time from the original StartDate.
-        for (var index = FirstIndexAtOrAfter(start, interval, window.Start); ; index++)
+        for (int index = FirstIndexAtOrAfter(start, interval, window.Start); ; index++)
         {
-            var occurrence = OccurrenceAt(start, interval, index);
+            DateOnly occurrence = OccurrenceAt(start, interval, index);
 
             // The series stops at EndDate. The window end is a second, independent stop.
             if (occurrence > end || occurrence > window.End)
@@ -140,8 +140,8 @@ public static class OccurrenceExpander
         Interval interval,
         int stepMonths)
     {
-        var monthsBetween = ((windowStart.Year - start.Year) * 12) + (windowStart.Month - start.Month);
-        var index = Math.Max(0, monthsBetween / stepMonths);
+        int monthsBetween = ((windowStart.Year - start.Year) * 12) + (windowStart.Month - start.Month);
+        int index = Math.Max(0, monthsBetween / stepMonths);
 
         // The day-of-month is anchored to StartDate, so the estimated occurrence can still precede
         // the window start inside the same month (for example StartDate 10 January and a window

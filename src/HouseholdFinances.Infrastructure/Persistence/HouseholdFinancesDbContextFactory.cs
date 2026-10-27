@@ -22,7 +22,7 @@ public class HouseholdFinancesDbContextFactory : IDesignTimeDbContextFactory<Hou
 
     public HouseholdFinancesDbContext CreateDbContext(string[] args)
     {
-        var configuration = new ConfigurationBuilder()
+        IConfigurationRoot configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: true)
             .AddJsonFile("appsettings.Development.json", optional: true)
@@ -32,7 +32,7 @@ public class HouseholdFinancesDbContextFactory : IDesignTimeDbContextFactory<Hou
             .AddEnvironmentVariables()
             .Build();
 
-        var connectionString = configuration.GetConnectionString(
+        string? connectionString = configuration.GetConnectionString(
             PersistenceServiceCollectionExtensions.ConnectionStringName);
 
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -40,7 +40,7 @@ public class HouseholdFinancesDbContextFactory : IDesignTimeDbContextFactory<Hou
             connectionString = FallbackConnectionString;
         }
 
-        var optionsBuilder = new DbContextOptionsBuilder<HouseholdFinancesDbContext>();
+        DbContextOptionsBuilder<HouseholdFinancesDbContext> optionsBuilder = new DbContextOptionsBuilder<HouseholdFinancesDbContext>();
         optionsBuilder.UseMySql(connectionString, MySqlServerVersionDefaults.ServerVersion);
 
         return new HouseholdFinancesDbContext(optionsBuilder.Options);

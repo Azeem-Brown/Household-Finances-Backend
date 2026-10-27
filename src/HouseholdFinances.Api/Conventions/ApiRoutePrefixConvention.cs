@@ -37,9 +37,9 @@ public sealed class ApiRoutePrefixConvention : IApplicationModelConvention
     {
         ArgumentNullException.ThrowIfNull(application);
 
-        foreach (var controller in application.Controllers)
+        foreach (ControllerModel controller in application.Controllers)
         {
-            var routeSelectors = controller.Selectors
+            List<SelectorModel> routeSelectors = controller.Selectors
                 .Where(selector => selector.AttributeRouteModel is not null)
                 .ToList();
 
@@ -50,7 +50,7 @@ public sealed class ApiRoutePrefixConvention : IApplicationModelConvention
                 continue;
             }
 
-            foreach (var selector in routeSelectors)
+            foreach (SelectorModel? selector in routeSelectors)
             {
                 if (HasPrefix(selector.AttributeRouteModel!.Template))
                 {
@@ -70,7 +70,7 @@ public sealed class ApiRoutePrefixConvention : IApplicationModelConvention
             return false;
         }
 
-        var normalized = template.TrimStart('~', '/');
+        string normalized = template.TrimStart('~', '/');
 
         return normalized.Equals(_prefixText, StringComparison.OrdinalIgnoreCase)
             || normalized.StartsWith($"{_prefixText}/", StringComparison.OrdinalIgnoreCase);

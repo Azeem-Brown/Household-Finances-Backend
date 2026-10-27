@@ -69,8 +69,8 @@ public sealed class ExceptionHandlingMiddleware
             return;
         }
 
-        var status = ErrorStatusMapper.ToStatusCode(exception.ErrorCode);
-        var problem = new ProblemDetails
+        int status = ErrorStatusMapper.ToStatusCode(exception.ErrorCode);
+        ProblemDetails problem = new ProblemDetails
         {
             Status = status,
             Title = ErrorStatusMapper.ToTitle(exception.ErrorCode),
@@ -91,7 +91,7 @@ public sealed class ExceptionHandlingMiddleware
         }
 
         const int status = StatusCodes.Status500InternalServerError;
-        var problem = new ProblemDetails
+        ProblemDetails problem = new ProblemDetails
         {
             Status = status,
             Title = ErrorStatusMapper.ToTitle(ErrorCode.Unknown)

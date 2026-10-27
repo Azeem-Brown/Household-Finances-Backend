@@ -68,7 +68,7 @@ public sealed class AuthenticationService : IAuthenticationService
             throw new HouseholdFinancesException(ErrorCode.Unauthorized, GoogleTokenIdentifier);
         }
 
-        var user = await _userRepository.GetByGoogleSubjectAsync(payload.Subject, cancellationToken);
+        User? user = await _userRepository.GetByGoogleSubjectAsync(payload.Subject, cancellationToken);
 
         if (user is null)
         {
@@ -112,7 +112,7 @@ public sealed class AuthenticationService : IAuthenticationService
 
         // Atomically consume the presented token. Reuse of a consumed token, or a token from a
         // revoked family, revokes the whole family and is reported as unauthorized.
-        var consume = await _refreshTokenService.ConsumeAsync(validated.UserId, validated.Jti, cancellationToken);
+        RefreshTokenConsumeResult consume = await _refreshTokenService.ConsumeAsync(validated.UserId, validated.Jti, cancellationToken);
 
         if (consume.Outcome == RefreshTokenConsumeOutcome.NotFound)
         {
@@ -125,7 +125,7 @@ public sealed class AuthenticationService : IAuthenticationService
             throw new HouseholdFinancesException(ErrorCode.Unauthorized, RefreshTokenIdentifier);
         }
 
-        var user = await _userRepository.GetByIdAsync(validated.UserId, cancellationToken)
+        User user = await _userRepository.GetByIdAsync(validated.UserId, cancellationToken)
             // A valid refresh token for a deleted user is treated as an authentication failure, not
             // a not-found, so it cannot be used to probe for user existence.
             ?? throw new HouseholdFinancesException(ErrorCode.Unauthorized, RefreshTokenIdentifier);
@@ -139,8 +139,8 @@ public sealed class AuthenticationService : IAuthenticationService
         Guid familyId,
         CancellationToken cancellationToken)
     {
-        var accessToken = _tokenService.CreateAccessToken(user);
-        var refreshToken = _tokenService.CreateRefreshToken(user);
+        ApiToken accessToken = _tokenService.CreateAccessToken(user);
+        ApiToken refreshToken = _tokenService.CreateRefreshToken(user);
 
         await _refreshTokenService.RecordIssuedAsync(
             new RefreshTokenIssue(
@@ -168,8 +168,8 @@ public sealed class AuthenticationService : IAuthenticationService
 
         if (!string.IsNullOrWhiteSpace(payload.Email))
         {
-            var atIndex = payload.Email.IndexOf('@', StringComparison.Ordinal);
-            var localPart = atIndex > 0 ? payload.Email[..atIndex] : payload.Email;
+            int atIndex = payload.Email.IndexOf('@', StringComparison.Ordinal);
+            string localPart = atIndex > 0 ? payload.Email[..atIndex] : payload.Email;
             if (!string.IsNullOrWhiteSpace(localPart))
             {
                 return localPart.Trim();

@@ -51,15 +51,15 @@ public sealed class HouseholdService : IHouseholdService
     /// <inheritdoc />
     public async Task<HouseholdDetail> CreateAsync(string? name, CancellationToken cancellationToken = default)
     {
-        var trimmedName = name?.Trim();
+        string? trimmedName = name?.Trim();
         if (string.IsNullOrEmpty(trimmedName))
         {
             throw new HouseholdFinancesException(ErrorCode.InvalidInput, NameIdentifier);
         }
 
-        var userId = ResolveCurrentUserId();
+        Guid userId = ResolveCurrentUserId();
 
-        var household = new Household
+        Household household = new Household
         {
             Id = Guid.NewGuid(),
             Name = trimmedName
@@ -87,11 +87,11 @@ public sealed class HouseholdService : IHouseholdService
 
         // A new household has no entries. The default Monthly window keeps the read model shape
         // consistent without adding a period parameter to the create flow.
-        var totals = await _repository.GetTotalsAsync(
+        HouseholdTotals totals = await _repository.GetTotalsAsync(
             household.Id,
             CurrentWindow(Interval.Monthly),
             cancellationToken);
-        var entryCounts = await _repository.GetEntryCountsAsync(household.Id, cancellationToken);
+        HouseholdEntryCounts entryCounts = await _repository.GetEntryCountsAsync(household.Id, cancellationToken);
 
         return ToDetail(household, totals, entryCounts);
     }
@@ -101,18 +101,18 @@ public sealed class HouseholdService : IHouseholdService
         Interval period,
         CancellationToken cancellationToken = default)
     {
-        var userId = ResolveCurrentUserId();
+        Guid userId = ResolveCurrentUserId();
 
         // Resolve "now" once per request so every household in the list uses one window.
-        var window = CurrentWindow(period);
+        PeriodWindow window = CurrentWindow(period);
 
-        var households = await _repository.GetByMemberAsync(userId, cancellationToken);
+        IReadOnlyList<Household> households = await _repository.GetByMemberAsync(userId, cancellationToken);
 
-        var details = new List<HouseholdDetail>(households.Count);
-        foreach (var household in households)
+        List<HouseholdDetail> details = new List<HouseholdDetail>(households.Count);
+        foreach (Household household in households)
         {
-            var totals = await _repository.GetTotalsAsync(household.Id, window, cancellationToken);
-            var entryCounts = await _repository.GetEntryCountsAsync(household.Id, cancellationToken);
+            HouseholdTotals totals = await _repository.GetTotalsAsync(household.Id, window, cancellationToken);
+            HouseholdEntryCounts entryCounts = await _repository.GetEntryCountsAsync(household.Id, cancellationToken);
             details.Add(ToDetail(household, totals, entryCounts));
         }
 
@@ -125,21 +125,21 @@ public sealed class HouseholdService : IHouseholdService
         Interval period,
         CancellationToken cancellationToken = default)
     {
-        var userId = ResolveCurrentUserId();
+        Guid userId = ResolveCurrentUserId();
 
         // A household the user does not belong to is reported as not found so the API never
         // discloses the existence of another user's household.
-        var household = await _repository.GetForMemberAsync(householdId, userId, cancellationToken)
+        Household household = await _repository.GetForMemberAsync(householdId, userId, cancellationToken)
             ?? throw new HouseholdFinancesException(ErrorCode.NotFound, householdId);
 
-        var totals = await _repository.GetTotalsAsync(
+        HouseholdTotals totals = await _repository.GetTotalsAsync(
             householdId,
             CurrentWindow(period),
             cancellationToken);
 
         // Deliberately read without the window: the counts describe the household's entries, not
         // the occurrences inside the requested period.
-        var entryCounts = await _repository.GetEntryCountsAsync(householdId, cancellationToken);
+        HouseholdEntryCounts entryCounts = await _repository.GetEntryCountsAsync(householdId, cancellationToken);
 
         return ToDetail(household, totals, entryCounts);
     }
@@ -165,11 +165,11 @@ public sealed class HouseholdService : IHouseholdService
 
     private Guid ResolveCurrentUserId()
     {
-        var identifier = _currentUserService.UserIdentifier;
+        string? identifier = _currentUserService.UserIdentifier;
 
         if (!_currentUserService.IsAuthenticated
             || string.IsNullOrWhiteSpace(identifier)
-            || !Guid.TryParse(identifier, out var userId))
+            || !Guid.TryParse(identifier, out Guid userId))
         {
             // Defense in depth: the default authorization policy already rejects unauthenticated
             // requests with 401 before the action runs.

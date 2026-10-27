@@ -33,7 +33,7 @@ public sealed class GoogleIdentityTokenValidator : IGoogleTokenValidator
             throw new InvalidGoogleTokenException("No Google ID token was supplied.");
         }
 
-        var clientId = _options.ClientId;
+        string? clientId = _options.ClientId;
         if (string.IsNullOrWhiteSpace(clientId))
         {
             // Without a configured audience the token cannot be validated safely, so reject it
@@ -41,7 +41,7 @@ public sealed class GoogleIdentityTokenValidator : IGoogleTokenValidator
             throw new InvalidGoogleTokenException("The Google client id is not configured.");
         }
 
-        var settings = new GoogleJsonWebSignature.ValidationSettings
+        GoogleJsonWebSignature.ValidationSettings settings = new GoogleJsonWebSignature.ValidationSettings
         {
             Audience = new[] { clientId },
             IssuedAtClockTolerance = TimeSpan.FromMinutes(_options.ClockSkewMinutes),
@@ -50,7 +50,7 @@ public sealed class GoogleIdentityTokenValidator : IGoogleTokenValidator
 
         try
         {
-            var payload = await GoogleJsonWebSignature.ValidateAsync(idToken, settings);
+            GoogleJsonWebSignature.Payload payload = await GoogleJsonWebSignature.ValidateAsync(idToken, settings);
 
             if (string.IsNullOrWhiteSpace(payload.Subject))
             {

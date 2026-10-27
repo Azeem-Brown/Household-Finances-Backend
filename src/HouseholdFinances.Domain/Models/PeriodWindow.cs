@@ -50,8 +50,8 @@ public readonly record struct PeriodWindow(DateOnly Start, DateOnly End)
     // The current week runs Monday to Sunday.
     private static PeriodWindow WeekBeginningOn(DateOnly today)
     {
-        var daysSinceMonday = ((int)today.DayOfWeek + 6) % 7;
-        var monday = today.AddDays(-daysSinceMonday);
+        int daysSinceMonday = ((int)today.DayOfWeek + 6) % 7;
+        DateOnly monday = today.AddDays(-daysSinceMonday);
 
         return new PeriodWindow(monday, monday.AddDays(6));
     }
@@ -59,24 +59,24 @@ public readonly record struct PeriodWindow(DateOnly Start, DateOnly End)
     // BiWeekly is anchored to the Monday of the current week, not to an arbitrary epoch.
     private static PeriodWindow BiWeeklyContaining(DateOnly today)
     {
-        var monday = WeekBeginningOn(today).Start;
+        DateOnly monday = WeekBeginningOn(today).Start;
 
         return new PeriodWindow(monday, monday.AddDays(13));
     }
 
     private static PeriodWindow MonthContaining(DateOnly today)
     {
-        var first = new DateOnly(today.Year, today.Month, 1);
-        var last = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
+        DateOnly first = new DateOnly(today.Year, today.Month, 1);
+        DateOnly last = new DateOnly(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month));
 
         return new PeriodWindow(first, last);
     }
 
     private static PeriodWindow QuarterContaining(DateOnly today)
     {
-        var firstMonth = ((today.Month - 1) / 3) * 3 + 1;
-        var first = new DateOnly(today.Year, firstMonth, 1);
-        var last = first.AddMonths(3).AddDays(-1);
+        int firstMonth = ((today.Month - 1) / 3) * 3 + 1;
+        DateOnly first = new DateOnly(today.Year, firstMonth, 1);
+        DateOnly last = first.AddMonths(3).AddDays(-1);
 
         return new PeriodWindow(first, last);
     }

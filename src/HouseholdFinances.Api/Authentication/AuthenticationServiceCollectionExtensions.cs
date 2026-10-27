@@ -42,9 +42,9 @@ public static class AuthenticationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(environment);
 
-        var isDevelopment = environment.IsDevelopment();
+        bool isDevelopment = environment.IsDevelopment();
 
-        var jwtOptions = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
+        JwtOptions jwtOptions = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
             ?? new JwtOptions();
         if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey))
         {
@@ -67,7 +67,7 @@ public static class AuthenticationServiceCollectionExtensions
                 $"{JwtOptions.SectionName}:SigningKey must be at least 256 bits (32 bytes) long.");
         }
 
-        var googleOptions = configuration.GetSection(GoogleIdentityOptions.SectionName)
+        GoogleIdentityOptions googleOptions = configuration.GetSection(GoogleIdentityOptions.SectionName)
             .Get<GoogleIdentityOptions>() ?? new GoogleIdentityOptions();
         if (!isDevelopment && string.IsNullOrWhiteSpace(googleOptions.ClientId))
         {
@@ -80,7 +80,7 @@ public static class AuthenticationServiceCollectionExtensions
         // The development bypass is off unless a developer has explicitly opted in. Null means the
         // section is absent, so the default (false) applies; a deployed host cannot inherit an
         // enabled value from a committed settings file.
-        var bypassOptions = configuration.GetSection(DevelopmentGoogleTokenBypassOptions.SectionName)
+        DevelopmentGoogleTokenBypassOptions bypassOptions = configuration.GetSection(DevelopmentGoogleTokenBypassOptions.SectionName)
             .Get<DevelopmentGoogleTokenBypassOptions>() ?? new DevelopmentGoogleTokenBypassOptions();
 
         services.AddSingleton(jwtOptions);
@@ -103,7 +103,7 @@ public static class AuthenticationServiceCollectionExtensions
             services.AddSingleton<IGoogleTokenValidator, GoogleIdentityTokenValidator>();
         }
 
-        var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey));
+        SymmetricSecurityKey signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey));
 
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -133,7 +133,7 @@ public static class AuthenticationServiceCollectionExtensions
                         // Defense in depth: the principal must be an access token. The audience check
                         // already excludes refresh tokens; this excludes any future token kind that
                         // shares the access audience.
-                        var tokenUse = context.Principal?
+                        string? tokenUse = context.Principal?
                             .FindFirst(ApiTokenService.TokenUseClaimType)?.Value;
                         if (!string.Equals(tokenUse, ApiTokenService.AccessTokenUse, StringComparison.Ordinal))
                         {

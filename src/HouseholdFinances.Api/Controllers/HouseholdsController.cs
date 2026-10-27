@@ -51,7 +51,7 @@ public sealed class HouseholdsController : ControllerBase
         [FromBody] CreateHouseholdRequest request,
         CancellationToken cancellationToken)
     {
-        var household = await _householdService.CreateAsync(request?.Name, cancellationToken);
+        HouseholdDetail household = await _householdService.CreateAsync(request?.Name, cancellationToken);
 
         return CreatedAtAction(nameof(GetById), new { id = household.Id }, household);
     }
@@ -105,9 +105,9 @@ public sealed class HouseholdsController : ControllerBase
             return Interval.Monthly;
         }
 
-        var name = period.Trim();
+        string name = period.Trim();
 
-        foreach (var candidate in Enum.GetNames<Interval>())
+        foreach (string candidate in Enum.GetNames<Interval>())
         {
             if (string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase))
             {

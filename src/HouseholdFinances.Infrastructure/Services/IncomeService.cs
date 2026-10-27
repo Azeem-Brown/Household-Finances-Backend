@@ -61,11 +61,11 @@ public sealed class IncomeService : IIncomeService
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        var validated = Validate(input);
-        var userId = ResolveCurrentUserId();
+        ValidatedIncome validated = Validate(input);
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var income = new Income
+        Income income = new Income
         {
             Id = Guid.NewGuid(),
             Name = validated.Name,
@@ -88,12 +88,12 @@ public sealed class IncomeService : IIncomeService
         Guid householdId,
         CancellationToken cancellationToken = default)
     {
-        var userId = ResolveCurrentUserId();
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var memberIds = MemberIdsQuery(householdId);
+        IQueryable<Guid> memberIds = MemberIdsQuery(householdId);
 
-        var incomes = await _context.Incomes
+        List<Income> incomes = await _context.Incomes
             .Where(income => memberIds.Contains(income.UserId))
             .OrderBy(income => income.StartDate)
             .ThenBy(income => income.Name)
@@ -112,11 +112,11 @@ public sealed class IncomeService : IIncomeService
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        var validated = Validate(input);
-        var userId = ResolveCurrentUserId();
+        ValidatedIncome validated = Validate(input);
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var income = await FindInHouseholdAsync(householdId, incomeId, cancellationToken)
+        Income income = await FindInHouseholdAsync(householdId, incomeId, cancellationToken)
             ?? throw new HouseholdFinancesException(ErrorCode.NotFound, incomeId);
 
         income.Name = validated.Name;
@@ -138,10 +138,10 @@ public sealed class IncomeService : IIncomeService
         Guid incomeId,
         CancellationToken cancellationToken = default)
     {
-        var userId = ResolveCurrentUserId();
+        Guid userId = ResolveCurrentUserId();
         await EnsureMemberAsync(householdId, userId, cancellationToken);
 
-        var income = await FindInHouseholdAsync(householdId, incomeId, cancellationToken)
+        Income income = await FindInHouseholdAsync(householdId, incomeId, cancellationToken)
             ?? throw new HouseholdFinancesException(ErrorCode.NotFound, incomeId);
 
         _context.Incomes.Remove(income);
@@ -150,7 +150,7 @@ public sealed class IncomeService : IIncomeService
 
     private static ValidatedIncome Validate(IncomeInput input)
     {
-        var trimmedName = input.Name?.Trim();
+        string? trimmedName = input.Name?.Trim();
         if (string.IsNullOrEmpty(trimmedName))
         {
             throw new HouseholdFinancesException(ErrorCode.InvalidInput, NameIdentifier);
@@ -185,7 +185,7 @@ public sealed class IncomeService : IIncomeService
 
     private async Task EnsureMemberAsync(Guid householdId, Guid userId, CancellationToken cancellationToken)
     {
-        var isMember = await _context.UserHouseholds.AnyAsync(
+        bool isMember = await _context.UserHouseholds.AnyAsync(
             membership => membership.HouseholdId == householdId && membership.UserId == userId,
             cancellationToken);
 
@@ -202,7 +202,7 @@ public sealed class IncomeService : IIncomeService
         Guid incomeId,
         CancellationToken cancellationToken)
     {
-        var memberIds = MemberIdsQuery(householdId);
+        IQueryable<Guid> memberIds = MemberIdsQuery(householdId);
 
         return _context.Incomes.FirstOrDefaultAsync(
             income => income.Id == incomeId && memberIds.Contains(income.UserId),
@@ -231,11 +231,11 @@ public sealed class IncomeService : IIncomeService
 
     private Guid ResolveCurrentUserId()
     {
-        var identifier = _currentUserService.UserIdentifier;
+        string? identifier = _currentUserService.UserIdentifier;
 
         if (!_currentUserService.IsAuthenticated
             || string.IsNullOrWhiteSpace(identifier)
-            || !Guid.TryParse(identifier, out var userId))
+            || !Guid.TryParse(identifier, out Guid userId))
         {
             // Defense in depth: the default authorization policy already rejects unauthenticated
             // requests with 401 before the action runs.

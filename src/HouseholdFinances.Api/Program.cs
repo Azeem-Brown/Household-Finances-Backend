@@ -5,7 +5,7 @@ using HouseholdFinances.Domain.Errors;
 using HouseholdFinances.Infrastructure.DependencyInjection;
 using HouseholdFinances.Infrastructure.Persistence;
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // MVC controllers are the convention for domain endpoints. Every controller route is served
 // under the versioned /api/v1 prefix (see ApiRoutePrefixConvention).
@@ -49,12 +49,12 @@ builder.Services.AddHouseholdFinancesAuthentication(builder.Configuration, build
 // Resolves the authenticated user from the request principal for domain and API code.
 builder.Services.AddCurrentUserAccessor();
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
 // Startup guard: the development Google token bypass opt-in must never be enabled outside
 // Development. Registration already scopes the bypass to Development and requires the opt-in;
 // this makes a misconfiguration fail fast and names the offending setting.
-var bypassOptions = app.Services.GetRequiredService<DevelopmentGoogleTokenBypassOptions>();
+DevelopmentGoogleTokenBypassOptions bypassOptions = app.Services.GetRequiredService<DevelopmentGoogleTokenBypassOptions>();
 if (bypassOptions.Enabled && !app.Environment.IsDevelopment())
 {
     throw new InvalidOperationException(

@@ -31,7 +31,7 @@ public sealed class RefreshTokenService : IRefreshTokenService
 
         // Create the family on first issue. A refresh reuses the existing family, so this is a no-op
         // there. The check and the insert share one unit of work.
-        var familyExists = await _context.RefreshTokenFamilies
+        bool familyExists = await _context.RefreshTokenFamilies
             .AnyAsync(family => family.Id == issue.FamilyId, cancellationToken);
 
         if (!familyExists)
@@ -46,7 +46,7 @@ public sealed class RefreshTokenService : IRefreshTokenService
 
         // Opportunistic cleanup: drop rows that have already expired so the table does not grow
         // unbounded. The repository has no scheduler, so this happens on write.
-        var expired = await _context.RefreshTokens
+        List<RefreshToken> expired = await _context.RefreshTokens
             .Where(token => token.ExpiresAtUtc <= issue.IssuedAtUtc)
             .ToListAsync(cancellationToken);
 
@@ -75,10 +75,10 @@ public sealed class RefreshTokenService : IRefreshTokenService
         string jti,
         CancellationToken cancellationToken = default)
     {
-        var now = DateTime.UtcNow;
+        DateTime now = DateTime.UtcNow;
 
         // Expired rows are excluded on lookup, so an expired token is never honoured.
-        var token = await _context.RefreshTokens.FirstOrDefaultAsync(
+        RefreshToken? token = await _context.RefreshTokens.FirstOrDefaultAsync(
             candidate => candidate.UserId == userId
                 && candidate.Jti == jti
                 && candidate.ExpiresAtUtc > now,
@@ -90,7 +90,7 @@ public sealed class RefreshTokenService : IRefreshTokenService
         }
 
         // A token whose family is revoked is rejected regardless of its own consumed state.
-        var family = await _context.RefreshTokenFamilies
+        RefreshTokenFamily? family = await _context.RefreshTokenFamilies
             .FirstOrDefaultAsync(candidate => candidate.Id == token.FamilyId, cancellationToken);
 
         if (family is null || family.Revoked)
@@ -127,7 +127,7 @@ public sealed class RefreshTokenService : IRefreshTokenService
         Guid familyId,
         CancellationToken cancellationToken = default)
     {
-        var family = await _context.RefreshTokenFamilies
+        RefreshTokenFamily? family = await _context.RefreshTokenFamilies
             .FirstOrDefaultAsync(candidate => candidate.Id == familyId, cancellationToken);
 
         if (family is null || family.Revoked)
