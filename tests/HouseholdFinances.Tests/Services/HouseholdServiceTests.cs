@@ -323,6 +323,134 @@ public class HouseholdServiceTests
         return (new HouseholdService(repository, currentUser, timeProvider), repository, currentUser);
     }
 
+    [Fact]
+    public async Task SetLogoAsync_StoresTheLogoForAMember()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: true);
+        byte[] content = new byte[] { 1, 2, 3 };
+
+        await service.SetLogoAsync(HouseholdId, content, "image/png");
+
+        HouseholdLogo stored = Assert.Single(repository.Logos.Values);
+        Assert.Equal(HouseholdId, stored.HouseholdId);
+        Assert.Equal(content, stored.Content);
+        Assert.Equal("image/png", stored.ContentType);
+        Assert.Equal(1, repository.SaveCount);
+    }
+
+    [Fact]
+    public async Task SetLogoAsync_ReplacesAnExistingLogoInPlace()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: true);
+
+        await service.SetLogoAsync(HouseholdId, new byte[] { 1 }, "image/png");
+        await service.SetLogoAsync(HouseholdId, new byte[] { 9, 9 }, "image/jpeg");
+
+        HouseholdLogo stored = Assert.Single(repository.Logos.Values);
+        Assert.Equal(new byte[] { 9, 9 }, stored.Content);
+        Assert.Equal("image/jpeg", stored.ContentType);
+    }
+
+    [Fact]
+    public async Task SetLogoAsync_DropsMediaTypeParametersBeforeMatching()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: true);
+
+        await service.SetLogoAsync(HouseholdId, new byte[] { 1 }, "image/png; charset=binary");
+
+        HouseholdLogo stored = Assert.Single(repository.Logos.Values);
+        Assert.Equal("image/png", stored.ContentType);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidLogoUploads))]
+    public async Task SetLogoAsync_RejectsAnInvalidUploadAndKeepsTheExistingLogo(
+        byte[] content,
+        string? contentType,
+        string expectedIdentifier)
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: true);
+        repository.Logos[HouseholdId] = new HouseholdLogo
+        {
+            HouseholdId = HouseholdId,
+            Content = new byte[] { 7 },
+            ContentType = "image/png",
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+
+        HouseholdFinancesException exception = await Assert.ThrowsAsync<HouseholdFinancesException>(
+            () => service.SetLogoAsync(HouseholdId, content, contentType));
+
+        Assert.Equal(ErrorCode.InvalidInput, exception.ErrorCode);
+        Assert.Equal(expectedIdentifier, exception.Identifier);
+
+        // A rejected upload must never replace a logo the household already has.
+        HouseholdLogo stored = Assert.Single(repository.Logos.Values);
+        Assert.Equal(new byte[] { 7 }, stored.Content);
+        Assert.Equal("image/png", stored.ContentType);
+    }
+
+    public static TheoryData<byte[], string?, string> InvalidLogoUploads => new()
+    {
+        { Array.Empty<byte>(), "image/png", HouseholdService.LogoIdentifier },
+        { new byte[] { 1 }, null, HouseholdService.LogoContentTypeIdentifier },
+        { new byte[] { 1 }, "application/pdf", HouseholdService.LogoContentTypeIdentifier },
+        { new byte[HouseholdService.MaxLogoBytes + 1], "image/png", HouseholdService.LogoSizeIdentifier }
+    };
+
+    [Fact]
+    public async Task SetLogoAsync_ThrowsNotFoundForANonMember()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: false);
+
+        HouseholdFinancesException exception = await Assert.ThrowsAsync<HouseholdFinancesException>(
+            () => service.SetLogoAsync(HouseholdId, new byte[] { 1 }, "image/png"));
+
+        Assert.Equal(ErrorCode.NotFound, exception.ErrorCode);
+        Assert.Empty(repository.Logos);
+    }
+
+    [Fact]
+    public async Task GetLogoAsync_ReturnsNullWhenTheHouseholdHasNoLogo()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        (HouseholdService service, _, _) = CreateService(household, isMember: true);
+
+        Assert.Null(await service.GetLogoAsync(HouseholdId));
+    }
+
+    [Fact]
+    public async Task GetLogoAsync_ReturnsTheStoredContentAndType()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        (HouseholdService service, _, _) = CreateService(household, isMember: true);
+        byte[] content = new byte[] { 4, 5, 6 };
+        await service.SetLogoAsync(HouseholdId, content, "image/webp");
+
+        HouseholdLogoContent? logo = await service.GetLogoAsync(HouseholdId);
+
+        Assert.NotNull(logo);
+        Assert.Equal(content, logo!.Content);
+        Assert.Equal("image/webp", logo.ContentType);
+    }
+
+    [Fact]
+    public async Task RemoveLogoAsync_ReportsWhetherALogoWasRemoved()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: true);
+        await service.SetLogoAsync(HouseholdId, new byte[] { 1 }, "image/png");
+
+        Assert.True(await service.RemoveLogoAsync(HouseholdId));
+        Assert.Empty(repository.Logos);
+        Assert.False(await service.RemoveLogoAsync(HouseholdId));
+    }
+
     private sealed class FakeHouseholdRepository : IHouseholdRepository
     {
         public List<Household> Households { get; } = new();

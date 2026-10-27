@@ -173,7 +173,7 @@ public sealed class HouseholdRepository : IHouseholdRepository
 
         // Tracked so a replace updates the single existing row rather than attempting a duplicate
         // primary key. Both the household identifier and the image are keyed together.
-        var existing = await _context.HouseholdLogos
+        HouseholdLogo? existing = await _context.HouseholdLogos
             .FirstOrDefaultAsync(candidate => candidate.HouseholdId == logo.HouseholdId, cancellationToken);
 
         if (existing is null)
@@ -190,7 +190,7 @@ public sealed class HouseholdRepository : IHouseholdRepository
     /// <inheritdoc />
     public async Task<bool> RemoveLogoAsync(Guid householdId, CancellationToken cancellationToken = default)
     {
-        var existing = await _context.HouseholdLogos
+        HouseholdLogo? existing = await _context.HouseholdLogos
             .FirstOrDefaultAsync(logo => logo.HouseholdId == householdId, cancellationToken);
 
         if (existing is null)

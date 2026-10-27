@@ -126,6 +126,28 @@ namespace HouseholdFinances.Infrastructure.Migrations
                     b.ToTable("Household", (string)null);
                 });
 
+            modelBuilder.Entity("HouseholdFinances.Domain.Entities.HouseholdLogo", b =>
+                {
+                    b.Property<Guid>("HouseholdId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("mediumblob");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("HouseholdId");
+
+                    b.ToTable("HouseholdLogo", (string)null);
+                });
+
             modelBuilder.Entity("HouseholdFinances.Domain.Entities.Income", b =>
                 {
                     b.Property<Guid>("Id")
@@ -325,6 +347,15 @@ namespace HouseholdFinances.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("HouseholdFinances.Domain.Entities.HouseholdLogo", b =>
+                {
+                    b.HasOne("HouseholdFinances.Domain.Entities.Household", null)
+                        .WithOne()
+                        .HasForeignKey("HouseholdFinances.Domain.Entities.HouseholdLogo", "HouseholdId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

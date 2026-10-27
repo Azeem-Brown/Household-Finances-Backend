@@ -149,9 +149,9 @@ public sealed class HouseholdsController : ControllerBase
         }
 
         byte[] content;
-        await using (var buffer = new MemoryStream())
+        await using (MemoryStream buffer = new MemoryStream())
         {
-            await using var source = file.OpenReadStream();
+            await using Stream source = file.OpenReadStream();
             await source.CopyToAsync(buffer, cancellationToken);
             content = buffer.ToArray();
         }
@@ -173,7 +173,7 @@ public sealed class HouseholdsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetLogo(Guid id, CancellationToken cancellationToken)
     {
-        var logo = await _householdService.GetLogoAsync(id, cancellationToken);
+        HouseholdLogoContent? logo = await _householdService.GetLogoAsync(id, cancellationToken);
 
         // A member and a non-member both receive not found when there is nothing to return, so a
         // probe cannot distinguish an absent logo from a household the caller cannot see.
