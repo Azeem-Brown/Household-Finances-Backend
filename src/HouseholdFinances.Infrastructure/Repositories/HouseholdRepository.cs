@@ -161,6 +161,41 @@ public sealed class HouseholdRepository : IHouseholdRepository
     }
 
     /// <inheritdoc />
+    public Task<int> CountMembersAsync(Guid householdId, CancellationToken cancellationToken = default) =>
+        _context.UserHouseholds.CountAsync(
+            membership => membership.HouseholdId == householdId,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<bool> RemoveMembershipAsync(
+        Guid householdId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        UserHousehold? membership = await _context.UserHouseholds
+            .FirstOrDefaultAsync(
+                candidate => candidate.HouseholdId == householdId && candidate.UserId == userId,
+                cancellationToken);
+
+        if (membership is null)
+        {
+            return false;
+        }
+
+        _context.UserHouseholds.Remove(membership);
+        return true;
+    }
+
+    /// <inheritdoc />
+    public Task RemoveAsync(Household household, CancellationToken cancellationToken = default)
+    {
+        // The entity is read without tracking, so it is attached in the Deleted state rather than
+        // requiring a second read. The configured cascades remove the household's children.
+        _context.Households.Remove(household);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
     public Task<HouseholdLogo?> GetLogoAsync(Guid householdId, CancellationToken cancellationToken = default) =>
         _context.HouseholdLogos
             .AsNoTracking()

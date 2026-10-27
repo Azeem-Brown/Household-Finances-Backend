@@ -82,6 +82,36 @@ public interface IHouseholdService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Removes the current user's membership of the household. The household, its bills, goals,
+    /// items, and logo remain for the other members, and the user's own income entries are their own
+    /// records, so nothing is deleted. A creator who leaves does not pass ownership on.
+    /// </summary>
+    /// <param name="householdId">The household to leave.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>), or the user is
+    /// not a member of the household or it does not exist
+    /// (<see cref="Errors.ErrorCode.NotFound"/>).
+    /// </exception>
+    Task LeaveAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes the household and everything that belongs to it: its bills, goals, items, logo, and
+    /// memberships. The user's own income entries are unaffected because they are the user's
+    /// records. Only the user who created the household may delete it, and only when it has no other
+    /// members, so no member loses data without choosing to.
+    /// </summary>
+    /// <param name="householdId">The household to delete.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <exception cref="Errors.HouseholdFinancesException">
+    /// The request is unauthenticated (<see cref="Errors.ErrorCode.Unauthorized"/>); the user is not
+    /// a member of the household or it does not exist
+    /// (<see cref="Errors.ErrorCode.NotFound"/>); or the user did not create the household, or other
+    /// members still belong to it (<see cref="Errors.ErrorCode.Conflict"/>).
+    /// </exception>
+    Task DeleteAsync(Guid householdId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Sets or replaces the household's logo. The current user must be a member. The upload is
     /// validated before anything is written, so a rejected upload leaves any existing logo in place.
     /// </summary>

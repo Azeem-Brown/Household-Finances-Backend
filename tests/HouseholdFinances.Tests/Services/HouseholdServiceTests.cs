@@ -451,6 +451,142 @@ public class HouseholdServiceTests
         Assert.False(await service.RemoveLogoAsync(HouseholdId));
     }
 
+    [Fact]
+    public async Task CreateAsync_RecordsTheCreatorAndReportsTheMembership()
+    {
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService();
+
+        HouseholdDetail detail = await service.CreateAsync("Brown Household");
+
+        Assert.True(detail.IsCreator);
+        Assert.Equal(1, detail.MemberCount);
+
+        Household household = Assert.Single(repository.Households);
+        Assert.Equal(UserId, household.CreatedByUserId);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ReportsAFalseCreatorForAMemberWhoDidNotCreateIt()
+    {
+        Household household = new Household
+        {
+            Id = HouseholdId,
+            Name = "Brown Household",
+            CreatedByUserId = Guid.NewGuid()
+        };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: true);
+
+        // A second member makes the count two, which is what blocks deletion for the creator.
+        repository.Memberships.Add(new UserHousehold
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            HouseholdId = HouseholdId
+        });
+
+        HouseholdDetail detail = await service.GetByIdAsync(HouseholdId, Interval.Monthly);
+
+        Assert.False(detail.IsCreator);
+        Assert.Equal(2, detail.MemberCount);
+    }
+
+    [Fact]
+    public async Task LeaveAsync_RemovesOnlyTheCallersMembership()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household", CreatedByUserId = UserId };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: true);
+
+        await service.LeaveAsync(HouseholdId);
+
+        // The household survives for the other members; only the caller's membership is gone.
+        Assert.Single(repository.Households);
+        Assert.Empty(repository.Memberships);
+        Assert.Equal(1, repository.SaveCount);
+    }
+
+    [Fact]
+    public async Task LeaveAsync_ThrowsNotFoundWhenTheUserIsNotAMember()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household" };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household);
+
+        var exception = await Assert.ThrowsAsync<HouseholdFinancesException>(
+            () => service.LeaveAsync(HouseholdId));
+
+        Assert.Equal(ErrorCode.NotFound, exception.ErrorCode);
+        Assert.Equal(0, repository.SaveCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_DeletesTheHouseholdForItsSoleCreator()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household", CreatedByUserId = UserId };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: true);
+
+        await service.DeleteAsync(HouseholdId);
+
+        Assert.Empty(repository.Households);
+        Assert.Empty(repository.Memberships);
+        Assert.Equal(1, repository.SaveCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ThrowsConflictWhenTheUserDidNotCreateTheHousehold()
+    {
+        Household household = new Household
+        {
+            Id = HouseholdId,
+            Name = "Brown Household",
+            CreatedByUserId = Guid.NewGuid()
+        };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: true);
+
+        var exception = await Assert.ThrowsAsync<HouseholdFinancesException>(
+            () => service.DeleteAsync(HouseholdId));
+
+        Assert.Equal(ErrorCode.Conflict, exception.ErrorCode);
+        Assert.Equal(HouseholdService.CreatorIdentifier, exception.Identifier);
+        Assert.Equal("Conflict Creator", exception.Message);
+        Assert.Single(repository.Households);
+        Assert.Equal(0, repository.SaveCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ThrowsConflictWhenOtherMembersRemain()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household", CreatedByUserId = UserId };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household, isMember: true);
+        repository.Memberships.Add(new UserHousehold
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            HouseholdId = HouseholdId
+        });
+
+        var exception = await Assert.ThrowsAsync<HouseholdFinancesException>(
+            () => service.DeleteAsync(HouseholdId));
+
+        // Another member would lose data they did not choose to lose, so the delete is refused.
+        Assert.Equal(ErrorCode.Conflict, exception.ErrorCode);
+        Assert.Equal(HouseholdService.MemberCountIdentifier, exception.Identifier);
+        Assert.Single(repository.Households);
+        Assert.Equal(0, repository.SaveCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ThrowsNotFoundWhenTheUserIsNotAMember()
+    {
+        Household household = new Household { Id = HouseholdId, Name = "Brown Household", CreatedByUserId = UserId };
+        (HouseholdService service, FakeHouseholdRepository repository, _) = CreateService(household);
+
+        var exception = await Assert.ThrowsAsync<HouseholdFinancesException>(
+            () => service.DeleteAsync(HouseholdId));
+
+        Assert.Equal(ErrorCode.NotFound, exception.ErrorCode);
+        Assert.Single(repository.Households);
+        Assert.Equal(0, repository.SaveCount);
+    }
+
     private sealed class FakeHouseholdRepository : IHouseholdRepository
     {
         public List<Household> Households { get; } = new();
@@ -541,6 +677,30 @@ public class HouseholdServiceTests
         public Task AddMembershipAsync(UserHousehold membership, CancellationToken cancellationToken = default)
         {
             Memberships.Add(membership);
+            return Task.CompletedTask;
+        }
+
+        public Task<int> CountMembersAsync(Guid householdId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Memberships.Count(membership => membership.HouseholdId == householdId));
+
+        public Task<bool> RemoveMembershipAsync(
+            Guid householdId,
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            UserHousehold? membership = Memberships.FirstOrDefault(
+                candidate => candidate.HouseholdId == householdId && candidate.UserId == userId);
+
+            return Task.FromResult(membership is not null && Memberships.Remove(membership));
+        }
+
+        public Task RemoveAsync(Household household, CancellationToken cancellationToken = default)
+        {
+            // Mirrors the configured cascades: the household's memberships and logo go with it.
+            Households.Remove(household);
+            Memberships.RemoveAll(membership => membership.HouseholdId == household.Id);
+            Logos.Remove(household.Id);
+
             return Task.CompletedTask;
         }
 

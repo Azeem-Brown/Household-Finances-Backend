@@ -94,6 +94,42 @@ public sealed class HouseholdsController : ControllerBase
         CancellationToken cancellationToken) =>
         Ok(await _householdService.GetByIdAsync(id, ParsePeriod(period), cancellationToken));
 
+    /// <summary>
+    /// Removes the current user's membership of a household. The household and its data stay for the
+    /// other members.
+    /// </summary>
+    /// <param name="id">The household to leave.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>No content.</returns>
+    [HttpDelete("{id:guid}/membership")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Leave(Guid id, CancellationToken cancellationToken)
+    {
+        await _householdService.LeaveAsync(id, cancellationToken);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Deletes a household the current user created and is the only member of. Its bills, goals,
+    /// items, logo, and memberships go with it; members' income entries do not, because they belong
+    /// to the user.
+    /// </summary>
+    /// <param name="id">The household to delete.</param>
+    /// <param name="cancellationToken">Cancels the operation.</param>
+    /// <returns>No content.</returns>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        await _householdService.DeleteAsync(id, cancellationToken);
+        return NoContent();
+    }
+
     // The query value is the enum member name, matched case-insensitively, and parsed here rather
     // than in a model binder so an unknown value stays on the existing problem+json error convention
     // instead of producing a different model-binding error shape. The names are matched explicitly
